@@ -353,104 +353,52 @@ export default function CollectionFiltersSettings({
     updateGroups(newGroups);
   };
 
-  // Handle operator change
+  const patchCondition = (
+    groupId: string,
+    conditionId: string,
+    patch: Partial<VisibilityCondition>,
+    debounced = false,
+  ) => {
+    const newGroups = groups.map(group => {
+      if (group.id !== groupId) return group;
+      return {
+        ...group,
+        conditions: group.conditions.map(c =>
+          c.id === conditionId ? { ...c, ...patch } : c
+        ),
+      };
+    });
+    if (debounced) {
+      debouncedUpdateGroups(newGroups);
+    } else {
+      updateGroups(newGroups);
+    }
+  };
+
   const handleOperatorChange = (groupId: string, conditionId: string, operator: VisibilityOperator) => {
-    const newGroups = groups.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          conditions: group.conditions.map(c => {
-            if (c.id === conditionId) {
-              return {
-                ...c,
-                operator,
-                value: operatorRequiresValue(operator) ? c.value : undefined,
-                value2: operatorRequiresSecondValue(operator) ? c.value2 : undefined,
-              };
-            }
-            return c;
-          }),
-        };
-      }
-      return group;
+    const needsSecondValue = operatorRequiresSecondValue(operator);
+    patchCondition(groupId, conditionId, {
+      operator,
+      value: operatorRequiresValue(operator) ? groups.find(g => g.id === groupId)?.conditions.find(c => c.id === conditionId)?.value : undefined,
+      value2: needsSecondValue ? groups.find(g => g.id === groupId)?.conditions.find(c => c.id === conditionId)?.value2 : undefined,
+      inputLayerId2: needsSecondValue ? groups.find(g => g.id === groupId)?.conditions.find(c => c.id === conditionId)?.inputLayerId2 : undefined,
     });
-    updateGroups(newGroups);
   };
 
-  // Handle value change (debounced for text inputs)
   const handleValueChange = (groupId: string, conditionId: string, value: string) => {
-    const newGroups = groups.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          conditions: group.conditions.map(c => {
-            if (c.id === conditionId) {
-              return { ...c, value };
-            }
-            return c;
-          }),
-        };
-      }
-      return group;
-    });
-    debouncedUpdateGroups(newGroups);
+    patchCondition(groupId, conditionId, { value }, true);
   };
 
-  // Handle second value change (for date between - debounced)
   const handleValue2Change = (groupId: string, conditionId: string, value2: string) => {
-    const newGroups = groups.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          conditions: group.conditions.map(c => {
-            if (c.id === conditionId) {
-              return { ...c, value2 };
-            }
-            return c;
-          }),
-        };
-      }
-      return group;
-    });
-    debouncedUpdateGroups(newGroups);
+    patchCondition(groupId, conditionId, { value2 }, true);
   };
 
-  // Handle compare operator change (for item count)
   const handleCompareOperatorChange = (groupId: string, conditionId: string, compareOperator: 'eq' | 'lt' | 'lte' | 'gt' | 'gte') => {
-    const newGroups = groups.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          conditions: group.conditions.map(c => {
-            if (c.id === conditionId) {
-              return { ...c, compareOperator };
-            }
-            return c;
-          }),
-        };
-      }
-      return group;
-    });
-    updateGroups(newGroups);
+    patchCondition(groupId, conditionId, { compareOperator });
   };
 
-  // Handle compare value change (for item count - debounced)
   const handleCompareValueChange = (groupId: string, conditionId: string, compareValue: number) => {
-    const newGroups = groups.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          conditions: group.conditions.map(c => {
-            if (c.id === conditionId) {
-              return { ...c, compareValue };
-            }
-            return c;
-          }),
-        };
-      }
-      return group;
-    });
-    debouncedUpdateGroups(newGroups);
+    patchCondition(groupId, conditionId, { compareValue }, true);
   };
 
   // Get field name by ID
@@ -465,25 +413,10 @@ export default function CollectionFiltersSettings({
     return field?.type;
   };
 
-  // Link a filter input to a condition via element picker
   const handlePickInputForCondition = (groupId: string, conditionId: string, origin?: { x: number; y: number }) => {
     startElementPicker(
       (layerId: string) => {
-        const newGroups = groups.map(group => {
-          if (group.id === groupId) {
-            return {
-              ...group,
-              conditions: group.conditions.map(c => {
-                if (c.id === conditionId) {
-                  return { ...c, inputLayerId: layerId, value: undefined };
-                }
-                return c;
-              }),
-            };
-          }
-          return group;
-        });
-        updateGroups(newGroups);
+        patchCondition(groupId, conditionId, { inputLayerId: layerId, value: undefined });
         stopElementPicker();
       },
       (layerId: string) => isInputInsideFilter(layerId, allLayers),
@@ -491,30 +424,31 @@ export default function CollectionFiltersSettings({
     );
   };
 
-  // Unlink input from condition
+  const handlePickSecondInputForCondition = (groupId: string, conditionId: string, origin?: { x: number; y: number }) => {
+    startElementPicker(
+      (layerId: string) => {
+        patchCondition(groupId, conditionId, { inputLayerId2: layerId, value2: undefined });
+        stopElementPicker();
+      },
+      (layerId: string) => isInputInsideFilter(layerId, allLayers),
+      origin
+    );
+  };
+
   const handleUnlinkInput = (groupId: string, conditionId: string) => {
-    const newGroups = groups.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          conditions: group.conditions.map(c => {
-            if (c.id === conditionId) {
-              return { ...c, inputLayerId: undefined };
-            }
-            return c;
-          }),
-        };
-      }
-      return group;
-    });
-    updateGroups(newGroups);
+    patchCondition(groupId, conditionId, { inputLayerId: undefined });
+  };
+
+  const handleUnlinkSecondInput = (groupId: string, conditionId: string) => {
+    patchCondition(groupId, conditionId, { inputLayerId2: undefined });
   };
 
   // Get linked input display name
   const getLinkedInputName = (inputLayerId: string): string => {
     const inputLayer = findLayerById(allLayers, inputLayerId);
-    if (!inputLayer) return 'Unknown input';
-    return inputLayer.customName || inputLayer.name || 'Input';
+    if (!inputLayer) return `Unknown input [${inputLayerId}]`;
+    const layerName = inputLayer.customName || inputLayer.name || 'Input';
+    return `${layerName} [${inputLayerId}]`;
   };
 
   // Render the dropdown content for adding conditions
@@ -651,8 +585,8 @@ export default function CollectionFiltersSettings({
           {operatorRequiresItemSelection(condition.operator) && referenceCollectionId && (
             <>
               {condition.inputLayerId ? (
-                <div className="flex items-center gap-1.5 rounded-md border border-green-500/30 bg-green-500/5 px-2 py-1.5 text-xs">
-                  <Icon name="filter" className="size-3 text-green-600 shrink-0" />
+                <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs">
+                  <Icon name="filter" className="size-3 text-muted-foreground shrink-0" />
                   <span className="truncate text-foreground">{getLinkedInputName(condition.inputLayerId)}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -700,8 +634,8 @@ export default function CollectionFiltersSettings({
           {operatorRequiresValue(condition.operator) && condition.operator !== 'item_count' && !operatorRequiresItemSelection(condition.operator) && (
             <>
               {condition.inputLayerId ? (
-                <div className="flex items-center gap-1.5 rounded-md border border-green-500/30 bg-green-500/5 px-2 py-1.5 text-xs">
-                  <Icon name="filter" className="size-3 text-green-600 shrink-0" />
+                <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs">
+                  <Icon name="filter" className="size-3 text-muted-foreground shrink-0" />
                   <span className="truncate text-foreground">{getLinkedInputName(condition.inputLayerId)}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -775,14 +709,53 @@ export default function CollectionFiltersSettings({
               )}
 
               {/* Second value for date between */}
-              {!condition.inputLayerId && operatorRequiresSecondValue(condition.operator) && (
+              {operatorRequiresSecondValue(condition.operator) && (
                 <>
                   <Label variant="muted" className="text-[10px] text-center">and</Label>
-                  <Input
-                    type="date"
-                    value={condition.value2 || ''}
-                    onChange={(e) => handleValue2Change(group.id, condition.id, e.target.value)}
-                  />
+                  {condition.inputLayerId2 ? (
+                    <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1.5 text-xs">
+                      <Icon name="filter" className="size-3 text-muted-foreground shrink-0" />
+                      <span className="truncate text-foreground">{getLinkedInputName(condition.inputLayerId2)}</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleUnlinkSecondInput(group.id, condition.id)}
+                          >
+                            <Icon name="unlink" className="size-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Unlink second filter input</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <div className="flex-1">
+                        <Input
+                          type="date"
+                          value={condition.value2 || ''}
+                          onChange={(e) => handleValue2Change(group.id, condition.id, e.target.value)}
+                        />
+                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            className="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-green-600 transition-colors"
+                            onClick={(e) => {
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              handlePickSecondInputForCondition(group.id, condition.id, {
+                                x: rect.left + rect.width / 2,
+                                y: rect.top + rect.height / 2,
+                              });
+                            }}
+                          >
+                            <Icon name="crosshair" className="size-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Link second filter input</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
                 </>
               )}
             </>

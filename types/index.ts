@@ -167,7 +167,9 @@ export interface LayerSettings {
   filterOnChange?: boolean; // For filter layers: trigger filtering on every input change (debounced)
   optionsSource?: {
     collectionId: string;
-    displayFieldId?: string; // defaults to title/name via findDisplayField
+    defaultItemId?: string; // item ID to pre-select as default
+    sortFieldId?: string; // field ID to sort options by (undefined = manual/insertion order)
+    sortOrder?: 'asc' | 'desc'; // sort direction (defaults to 'asc')
   };
 }
 
@@ -1159,6 +1161,7 @@ export interface VisibilityCondition {
   compareValue?: number; // For 'item_count' operator
   // For linking filter value to an input layer inside a Filter
   inputLayerId?: string;
+  inputLayerId2?: string; // For second bound (e.g. 'is_between')
 }
 
 export interface VisibilityConditionGroup {

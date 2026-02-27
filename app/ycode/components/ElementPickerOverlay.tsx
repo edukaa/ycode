@@ -178,10 +178,11 @@ export default function ElementPickerOverlay({ iframeElement, zoom }: ElementPic
     : mousePos.y;
 
   const dx = endX - origin.x;
-  const cp1x = origin.x + dx * 0.4;
-  const cp1y = origin.y;
-  const cp2x = endX - dx * 0.4;
-  const cp2y = endY;
+  const curveOffset = Math.max(32, Math.min(140, Math.abs(dx) * 0.25));
+  const cp1x = origin.x + dx * 0.35;
+  const cp1y = origin.y - curveOffset;
+  const cp2x = endX - dx * 0.35;
+  const cp2y = endY - curveOffset;
   const pathD = `M ${origin.x} ${origin.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
 
   const highlightColor = hoveredElement?.isValid ? '#22c55e' : '#22c55e';
@@ -198,7 +199,7 @@ export default function ElementPickerOverlay({ iframeElement, zoom }: ElementPic
         d={pathD}
         fill="none"
         stroke="#22c55e"
-        strokeWidth={2}
+        strokeWidth={1.25}
         strokeLinecap="round"
       />
 
@@ -229,14 +230,14 @@ export default function ElementPickerOverlay({ iframeElement, zoom }: ElementPic
       {/* Hover highlight on any layer */}
       {hoveredElement && (
         <rect
-          x={hoveredElement.rect.left - 2}
-          y={hoveredElement.rect.top - 2}
-          width={hoveredElement.rect.width + 4}
-          height={hoveredElement.rect.height + 4}
+          x={hoveredElement.rect.left - 1}
+          y={hoveredElement.rect.top - 1}
+          width={hoveredElement.rect.width + 2}
+          height={hoveredElement.rect.height + 2}
           rx={4}
           fill={highlightFill}
           stroke={highlightColor}
-          strokeWidth={2}
+          strokeWidth={1}
         />
       )}
     </svg>

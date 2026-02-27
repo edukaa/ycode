@@ -26,10 +26,12 @@ interface FilterStoreState {
   /** Maps inputLayerId → URL param name */
   nameMap: NameMap;
   setFilterValue: (filterLayerId: string, inputLayerId: string, value: string) => void;
+  setFilterValues: (filterLayerId: string, inputValues: Record<string, string>) => void;
   clearFilter: (filterLayerId: string) => void;
   getFilterValues: (filterLayerId: string) => Record<string, string>;
   getAllFilterValues: () => Record<string, Record<string, string>>;
   setNameMap: (map: NameMap) => void;
+  removeNameMapEntries: (inputLayerIds: string[]) => void;
   syncToUrl: () => void;
   loadFromUrl: () => void;
   reset: () => void;
@@ -80,6 +82,49 @@ export const useFilterStore = create<FilterStoreState>((set, get) => ({
     setTimeout(() => get().syncToUrl(), 0);
   },
 
+  setFilterValues: (filterLayerId, inputValues) => {
+    set(state => {
+      const newValues = { ...state.values };
+      let changed = false;
+
+      // Remove stale _url entries for these inputs so buildApiFilters
+      // doesn't keep URL-loaded values after real input interaction.
+      if (newValues['_url']) {
+        let urlChanged = false;
+        const nextUrl = { ...newValues['_url'] };
+        for (const inputLayerId of Object.keys(inputValues)) {
+          if (inputLayerId in nextUrl) {
+            delete nextUrl[inputLayerId];
+            urlChanged = true;
+          }
+        }
+        if (urlChanged) {
+          changed = true;
+          if (Object.keys(nextUrl).length === 0) {
+            delete newValues['_url'];
+          } else {
+            newValues['_url'] = nextUrl;
+          }
+        }
+      }
+
+      const currentLayerValues = newValues[filterLayerId] || {};
+      const nextLayerValues = { ...currentLayerValues };
+      for (const [inputLayerId, value] of Object.entries(inputValues)) {
+        if (nextLayerValues[inputLayerId] !== value) {
+          nextLayerValues[inputLayerId] = value;
+          changed = true;
+        }
+      }
+
+      if (!changed) return state;
+
+      newValues[filterLayerId] = nextLayerValues;
+      return { values: newValues };
+    });
+    setTimeout(() => get().syncToUrl(), 0);
+  },
+
   clearFilter: (filterLayerId) => {
     set(state => {
       const { [filterLayerId]: _, ...rest } = state.values;
@@ -98,6 +143,17 @@ export const useFilterStore = create<FilterStoreState>((set, get) => ({
 
   setNameMap: (map) => {
     set(state => ({ nameMap: { ...state.nameMap, ...map } }));
+  },
+
+  removeNameMapEntries: (inputLayerIds) => {
+    if (inputLayerIds.length === 0) return;
+    set(state => {
+      const nextMap = { ...state.nameMap };
+      for (const inputLayerId of inputLayerIds) {
+        delete nextMap[inputLayerId];
+      }
+      return { nameMap: nextMap };
+    });
   },
 
   syncToUrl: () => {

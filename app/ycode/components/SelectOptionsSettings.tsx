@@ -8,7 +8,7 @@
  * (each item becomes an option with value=itemId, label=displayField).
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 
 import {
   DndContext,
@@ -48,11 +48,14 @@ import {
 import Icon from '@/components/ui/icon';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
 import SettingsPanel from './SettingsPanel';
+import ToggleGroup from './ToggleGroup';
 
 import { generateId } from '@/lib/utils';
 import { useCollectionsStore } from '@/stores/useCollectionsStore';
+import { collectionsApi } from '@/lib/api';
+import { findDisplayField, getItemDisplayName } from '@/lib/collection-field-utils';
 
-import type { Layer } from '@/types';
+import type { Layer, CollectionItemWithValues } from '@/types';
 
 interface SelectOptionsSettingsProps {
   layer: Layer | null;
@@ -308,7 +311,7 @@ export default function SelectOptionsSettings({
   const [newLabel, setNewLabel] = useState('');
   const [newValue, setNewValue] = useState('');
 
-  const { collections } = useCollectionsStore();
+  const { collections, fields, loadFields } = useCollectionsStore();
 
   const isSelectLayer = layer?.name === 'select';
   const optionsSource = layer?.settings?.optionsSource;
@@ -316,8 +319,14 @@ export default function SelectOptionsSettings({
   const sourceCollectionName = isCollectionSource
     ? collections.find(c => c.id === optionsSource!.collectionId)?.name
     : null;
+  const sourceCollectionFields = isCollectionSource
+    ? (fields[optionsSource!.collectionId] || [])
+    : [];
 
   const options = isSelectLayer && layer && !isCollectionSource ? getOptionsFromLayer(layer) : [];
+  const sourceValue = isCollectionSource
+    ? optionsSource!.collectionId
+    : options.length > 0 ? 'list' : 'none';
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -330,7 +339,7 @@ export default function SelectOptionsSettings({
   const handleSourceChange = useCallback((value: string) => {
     if (!layer) return;
 
-    if (value === 'none') {
+    if (value === 'none' || value === 'list') {
       const { optionsSource: _, ...restSettings } = layer.settings || {};
       onLayerUpdate(layer.id, {
         settings: Object.keys(restSettings).length > 0 ? restSettings : undefined,
@@ -344,6 +353,52 @@ export default function SelectOptionsSettings({
       });
     }
   }, [layer, onLayerUpdate]);
+
+  useEffect(() => {
+    if (!isCollectionSource || !optionsSource?.collectionId) return;
+    if (sourceCollectionFields.length > 0) return;
+    loadFields(optionsSource.collectionId);
+  }, [isCollectionSource, optionsSource?.collectionId, sourceCollectionFields.length, loadFields]);
+
+  const patchOptionsSource = useCallback((patch: Record<string, any>) => {
+    if (!layer || !optionsSource?.collectionId) return;
+    onLayerUpdate(layer.id, {
+      settings: {
+        ...layer.settings,
+        optionsSource: { ...optionsSource, ...patch },
+      },
+    });
+  }, [layer, onLayerUpdate, optionsSource]);
+
+  const handleDefaultItemChange = useCallback((value: string) => {
+    patchOptionsSource({ defaultItemId: value === 'none' ? undefined : value });
+  }, [patchOptionsSource]);
+
+  const handleSortFieldChange = useCallback((value: string) => {
+    patchOptionsSource({ sortFieldId: value === 'none' ? undefined : value, sortOrder: value === 'none' ? undefined : (optionsSource?.sortOrder || 'asc') });
+  }, [patchOptionsSource, optionsSource?.sortOrder]);
+
+  const handleSortOrderChange = useCallback((value: string | boolean) => {
+    patchOptionsSource({ sortOrder: value as 'asc' | 'desc' });
+  }, [patchOptionsSource]);
+
+  // Fetch collection items for the Default picker
+  const [sourceItems, setSourceItems] = useState<CollectionItemWithValues[]>([]);
+  useEffect(() => {
+    if (!isCollectionSource || !optionsSource?.collectionId) {
+      setSourceItems([]);
+      return;
+    }
+    let cancelled = false;
+    collectionsApi.getItems(optionsSource.collectionId, { limit: 200 }).then(res => {
+      if (!cancelled && !res.error) {
+        setSourceItems(res.data?.items || []);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isCollectionSource, optionsSource?.collectionId]);
+
+  const displayField = findDisplayField(sourceCollectionFields);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -485,12 +540,12 @@ export default function SelectOptionsSettings({
       }
     >
       <div className="flex flex-col gap-3">
-        {/* Source selector */}
+        {/* Options source selector */}
         <div className="grid grid-cols-3 items-center">
-          <Label variant="muted">Source</Label>
+          <Label variant="muted">Options</Label>
           <div className="col-span-2">
             <Select
-              value={isCollectionSource ? optionsSource!.collectionId : 'none'}
+              value={sourceValue}
               onValueChange={handleSourceChange}
             >
               <SelectTrigger className="w-full">
@@ -498,12 +553,21 @@ export default function SelectOptionsSettings({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
+                <SelectItem value="list">
+                  <span className="flex items-center gap-2">
+                    <Icon name="listUnordered" className="size-3 opacity-60" />
+                    List
+                  </span>
+                </SelectItem>
                 {collections.length > 0 && (
                   <SelectGroup>
                     <SelectLabel>Collections</SelectLabel>
                     {collections.map((collection) => (
                       <SelectItem key={collection.id} value={collection.id}>
-                        {collection.name}
+                        <span className="flex items-center gap-2">
+                          <Icon name="database" className="size-3 opacity-60" />
+                          {collection.name}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -513,14 +577,75 @@ export default function SelectOptionsSettings({
           </div>
         </div>
 
-        {/* Collection source indicator */}
+        {/* Collection source settings */}
         {isCollectionSource && (
-          <div className="flex items-center gap-2 px-2 py-2 bg-muted rounded-lg">
-            <Icon name="database" className="size-3 opacity-60 shrink-0" />
-            <span className="text-xs text-muted-foreground truncate">
-              Options from {sourceCollectionName || 'collection'}
-            </span>
-          </div>
+          <>
+            {/* Default item selector */}
+            <div className="grid grid-cols-3 items-center">
+              <Label variant="muted">Default</Label>
+              <div className="col-span-2">
+                <Select
+                  value={optionsSource?.defaultItemId || 'none'}
+                  onValueChange={handleDefaultItemChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {sourceItems.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {getItemDisplayName(item, displayField)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Sorting section divider */}
+            <div className="flex items-center gap-2 pt-2">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Sorting</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <div className="grid grid-cols-3 items-center">
+              <Label variant="muted">Sort by</Label>
+              <div className="col-span-2">
+                <Select
+                  value={optionsSource?.sortFieldId || 'none'}
+                  onValueChange={handleSortFieldChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {sourceCollectionFields.map((field) => (
+                      <SelectItem key={field.id} value={field.id}>
+                        {field.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 items-center">
+              <Label variant="muted">Order</Label>
+              <div className="col-span-2 *:w-full">
+                <ToggleGroup
+                  options={[
+                    { label: 'Ascending', value: 'asc' },
+                    { label: 'Descending', value: 'desc' },
+                  ]}
+                  value={optionsSource?.sortOrder || 'asc'}
+                  onChange={handleSortOrderChange}
+                />
+              </div>
+            </div>
+
+          </>
         )}
 
         {/* Static options editor (only when not using collection source) */}

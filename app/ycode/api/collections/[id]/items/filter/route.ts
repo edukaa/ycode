@@ -26,6 +26,10 @@ interface FilterCondition {
 // Conservative chunk size avoids hitting URL length limits (~8KB).
 const IN_CHUNK_SIZE = 150;
 
+function escapeLikeValue(val: string): string {
+  return val.replace(/[%_\\]/g, '\\$&');
+}
+
 /**
  * Run a query against collection_item_values in chunks to avoid
  * Supabase/PostgREST URL-length limits on .in() clauses.
@@ -102,28 +106,28 @@ async function getIdsMatchingFilter(
     // --- Text positive ---
     case 'contains': {
       const data = await chunkedQuery(
-        chunk => selectIds(chunk).ilike('value', `%${value}%`),
+        chunk => selectIds(chunk).ilike('value', `%${escapeLikeValue(value)}%`),
         allItemIds,
       );
       return new Set(data.map(d => d.item_id));
     }
     case 'is': {
       const data = await chunkedQuery(
-        chunk => selectIds(chunk).ilike('value', value),
+        chunk => selectIds(chunk).ilike('value', escapeLikeValue(value)),
         allItemIds,
       );
       return new Set(data.map(d => d.item_id));
     }
     case 'starts_with': {
       const data = await chunkedQuery(
-        chunk => selectIds(chunk).ilike('value', `${value}%`),
+        chunk => selectIds(chunk).ilike('value', `${escapeLikeValue(value)}%`),
         allItemIds,
       );
       return new Set(data.map(d => d.item_id));
     }
     case 'ends_with': {
       const data = await chunkedQuery(
-        chunk => selectIds(chunk).ilike('value', `%${value}`),
+        chunk => selectIds(chunk).ilike('value', `%${escapeLikeValue(value)}`),
         allItemIds,
       );
       return new Set(data.map(d => d.item_id));
@@ -132,7 +136,7 @@ async function getIdsMatchingFilter(
     // --- Text negative (complement) ---
     case 'does_not_contain': {
       const data = await chunkedQuery(
-        chunk => selectIds(chunk).ilike('value', `%${value}%`),
+        chunk => selectIds(chunk).ilike('value', `%${escapeLikeValue(value)}%`),
         allItemIds,
       );
       const matchIds = new Set(data.map(d => d.item_id));
@@ -140,7 +144,7 @@ async function getIdsMatchingFilter(
     }
     case 'is_not': {
       const data = await chunkedQuery(
-        chunk => selectIds(chunk).ilike('value', value),
+        chunk => selectIds(chunk).ilike('value', escapeLikeValue(value)),
         allItemIds,
       );
       const matchIds = new Set(data.map(d => d.item_id));
@@ -228,9 +232,16 @@ async function getIdsMatchingFilter(
       return result;
     }
     case 'is_between': {
-      const startDate = new Date(value).getTime();
-      const endDate = new Date(filter.value2 || '').getTime();
-      if (isNaN(startDate) || isNaN(endDate)) return new Set();
+      const startRaw = value?.trim();
+      const endRaw = (filter.value2 || '').trim();
+      if (!startRaw && !endRaw) return new Set();
+
+      const startDate = startRaw ? new Date(startRaw).getTime() : null;
+      const endDate = endRaw ? new Date(endRaw).getTime() : null;
+      if ((startDate !== null && isNaN(startDate)) || (endDate !== null && isNaN(endDate))) {
+        return new Set();
+      }
+
       const data = await chunkedQuery(
         chunk => selectIdsAndValues(chunk).neq('value', ''),
         allItemIds,
@@ -238,7 +249,15 @@ async function getIdsMatchingFilter(
       const result = new Set<string>();
       for (const row of data) {
         const d = new Date(String(row.value)).getTime();
-        if (!isNaN(d) && d >= startDate && d <= endDate) result.add(row.item_id);
+        if (isNaN(d)) continue;
+
+        if (startDate !== null && endDate !== null) {
+          if (d >= startDate && d <= endDate) result.add(row.item_id);
+        } else if (startDate !== null) {
+          if (d >= startDate) result.add(row.item_id);
+        } else if (endDate !== null) {
+          if (d <= endDate) result.add(row.item_id);
+        }
       }
       return result;
     }
@@ -354,7 +373,7 @@ async function getIdsMatchingFilter(
 
     default: {
       const data = await chunkedQuery(
-        chunk => selectIds(chunk).ilike('value', `%${value}%`),
+        chunk => selectIds(chunk).ilike('value', `%${escapeLikeValue(value)}%`),
         allItemIds,
       );
       return new Set(data.map(d => d.item_id));

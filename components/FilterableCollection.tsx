@@ -33,6 +33,7 @@ export default function FilterableCollection({
   const [hasActiveFilters, setHasActiveFilters] = useState(false);
   const prevFilterKeyRef = useRef<string>('');
   const abortRef = useRef<AbortController | null>(null);
+  const inFlightRequestKeyRef = useRef<string | null>(null);
 
   const [filteredPage, setFilteredPage] = useState(1);
   const [filteredTotalPages, setFilteredTotalPages] = useState(1);
@@ -67,7 +68,16 @@ export default function FilterableCollection({
     // So we use the distributive property to convert:
     //   (A OR B) AND C  →  (A AND C) OR (B AND C)
 
-    type FilterItem = { fieldId: string; operator: string; value: string; fieldType?: string };
+    type FilterItem = { fieldId: string; operator: string; value: string; value2?: string; fieldType?: string };
+    const operatorsWithoutValue = new Set([
+      'is_present',
+      'is_empty',
+      'is_not_empty',
+      'has_items',
+      'has_no_items',
+      'exists',
+      'does_not_exist',
+    ]);
 
     const activeByGroup: FilterItem[][] = [];
 
@@ -75,31 +85,57 @@ export default function FilterableCollection({
       const activeInGroup: FilterItem[] = [];
 
       for (const condition of group.conditions) {
-        if (!condition.inputLayerId || !condition.fieldId) continue;
+        if (!condition.fieldId) continue;
 
-        let inputValue = '';
-        for (const layerValues of Object.values(filterValues)) {
-          if (condition.inputLayerId in layerValues) {
-            inputValue = layerValues[condition.inputLayerId];
-            break;
+        let value = condition.value || '';
+        let value2 = condition.value2;
+
+        if (condition.inputLayerId) {
+          let inputValue = '';
+          for (const layerValues of Object.values(filterValues)) {
+            if (condition.inputLayerId in layerValues) {
+              inputValue = layerValues[condition.inputLayerId];
+              break;
+            }
           }
+          if (!inputValue && condition.operator !== 'is_between') continue;
+          if (condition.fieldType === 'boolean' && inputValue === 'false') continue;
+          if (inputValue) value = inputValue;
         }
 
-        if (!inputValue) continue;
-        if (condition.fieldType === 'boolean' && inputValue === 'false') continue;
+        if (condition.inputLayerId2) {
+          let inputValue2 = '';
+          for (const layerValues of Object.values(filterValues)) {
+            if (condition.inputLayerId2 in layerValues) {
+              inputValue2 = layerValues[condition.inputLayerId2];
+              break;
+            }
+          }
+          if (!inputValue2 && condition.operator !== 'is_between') continue;
+          if (inputValue2) value2 = inputValue2;
+        }
 
-        let value = inputValue;
+        const requiresValue = !operatorsWithoutValue.has(condition.operator);
+        if (condition.operator === 'is_between') {
+          // Allow one-sided date range: start-only or end-only
+          if (!value && !value2) continue;
+        } else if (requiresValue && !value) {
+          continue;
+        }
+
         if (
           (condition.fieldType === 'reference' || condition.fieldType === 'multi_reference') &&
-          ['is_one_of', 'is_not_one_of', 'contains_all_of', 'contains_exactly'].includes(condition.operator)
+          ['is_one_of', 'is_not_one_of', 'contains_all_of', 'contains_exactly'].includes(condition.operator) &&
+          condition.inputLayerId
         ) {
-          value = JSON.stringify([inputValue]);
+          value = JSON.stringify([value]);
         }
 
         activeInGroup.push({
           fieldId: condition.fieldId,
           operator: condition.operator,
           value,
+          value2,
           fieldType: condition.fieldType,
         });
       }
@@ -112,15 +148,19 @@ export default function FilterableCollection({
     if (activeByGroup.length === 0) return [];
 
     // Cross-product to distribute OR-within-group across AND-between-groups
+    const MAX_FILTER_GROUPS = 50;
     let result: FilterItem[][] = [[]];
     for (const groupConditions of activeByGroup) {
       const expanded: FilterItem[][] = [];
       for (const existing of result) {
         for (const cond of groupConditions) {
           expanded.push([...existing, cond]);
+          if (expanded.length >= MAX_FILTER_GROUPS) break;
         }
+        if (expanded.length >= MAX_FILTER_GROUPS) break;
       }
       result = expanded;
+      if (result.length >= MAX_FILTER_GROUPS) break;
     }
 
     return result;
@@ -133,16 +173,36 @@ export default function FilterableCollection({
     const hasItemsEls = document.querySelectorAll(
       `[data-collection-has-items="${collectionLayerId}"]`
     );
+    const itemCountEls = document.querySelectorAll(
+      `[data-collection-item-count="${collectionLayerId}"]`
+    );
+
+    const evaluateItemCount = (count: number, op: string, value: number): boolean => {
+      if (op === 'lt') return count < value;
+      if (op === 'lte') return count <= value;
+      if (op === 'gt') return count > value;
+      if (op === 'gte') return count >= value;
+      return count === value;
+    };
 
     if (filteredCount < 0) {
       emptyEls.forEach(el => { (el as HTMLElement).style.display = 'none'; });
       hasItemsEls.forEach(el => { (el as HTMLElement).style.display = 'none'; });
+      itemCountEls.forEach(el => { (el as HTMLElement).style.display = 'none'; });
     } else {
       emptyEls.forEach(el => {
         (el as HTMLElement).style.display = filteredCount === 0 ? '' : 'none';
       });
       hasItemsEls.forEach(el => {
         (el as HTMLElement).style.display = filteredCount > 0 ? '' : 'none';
+      });
+      itemCountEls.forEach(el => {
+        const node = el as HTMLElement;
+        const op = node.getAttribute('data-collection-item-count-op') || 'eq';
+        const rawValue = node.getAttribute('data-collection-item-count-value') || '0';
+        const value = Number.parseInt(rawValue, 10);
+        const shouldShow = evaluateItemCount(filteredCount, op, Number.isNaN(value) ? 0 : value);
+        node.style.display = shouldShow ? '' : 'none';
       });
     }
   }, [collectionLayerId]);
@@ -345,17 +405,28 @@ export default function FilterableCollection({
   // --- Fetch logic ---
 
   const fetchFiltered = useCallback((
-    filterGroups: Array<Array<{ fieldId: string; operator: string; value: string; fieldType?: string }>>,
+    filterGroups: Array<Array<{ fieldId: string; operator: string; value: string; value2?: string; fieldType?: string }>>,
     offset: number,
     append: boolean,
   ) => {
     if (filterGroups.length === 0) return;
+
+    const requestKey = JSON.stringify({
+      filterGroups,
+      offset,
+      append,
+      sortBy,
+      sortOrder,
+      limit,
+    });
+    if (inFlightRequestKeyRef.current === requestKey) return;
 
     setIsFiltering(true);
 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    inFlightRequestKeyRef.current = requestKey;
 
     fetch(`/ycode/api/collections/${collectionId}/items/filter`, {
       method: 'POST',
@@ -418,6 +489,12 @@ export default function FilterableCollection({
           console.error('Filter fetch failed:', err);
           setIsFiltering(false);
         }
+      })
+      .finally(() => {
+        if (inFlightRequestKeyRef.current === requestKey) {
+          inFlightRequestKeyRef.current = null;
+          abortRef.current = null;
+        }
       });
   }, [collectionId, collectionLayerId, layerTemplate, sortBy, sortOrder, limit, paginationMode, updateEmptyStateElements]);
 
@@ -449,7 +526,10 @@ export default function FilterableCollection({
       // Only reload when transitioning FROM active filters, not on initial load.
       if (strippedPaginationParamRef.current || (paginationMode === 'load_more' && !wasEmpty)) {
         strippedPaginationParamRef.current = false;
-        window.location.href = window.location.pathname;
+        const reloadUrl = new URL(window.location.href);
+        reloadUrl.searchParams.delete(fpKey);
+        reloadUrl.searchParams.delete(pKey);
+        window.location.href = reloadUrl.toString();
         return;
       }
 

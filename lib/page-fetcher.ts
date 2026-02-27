@@ -1736,12 +1736,26 @@ export async function resolveCollectionLayers(
     if (layer.name === 'select' && layer.settings?.optionsSource?.collectionId) {
       try {
         const sourceCollectionId = layer.settings.optionsSource.collectionId;
-        const { items: sourceItems } = await getItemsWithValues(sourceCollectionId, true);
-        const sourceFields = await getFieldsByCollectionId(sourceCollectionId);
+        let { items: sourceItems } = await getItemsWithValues(sourceCollectionId, isPublished);
+        const sourceFields = await getFieldsByCollectionId(sourceCollectionId, isPublished);
+        const opts = layer.settings.optionsSource;
 
-        const displayField = layer.settings.optionsSource.displayFieldId
-          ? sourceFields.find(f => f.id === layer.settings!.optionsSource!.displayFieldId) ?? findDisplayField(sourceFields)
-          : findDisplayField(sourceFields);
+        const displayField = findDisplayField(sourceFields);
+
+        if (opts.sortFieldId) {
+          const sortField = sourceFields.find(f => f.id === opts.sortFieldId);
+          if (sortField) {
+            const dir = opts.sortOrder === 'desc' ? -1 : 1;
+            sourceItems = [...sourceItems].sort((a, b) => {
+              const aVal = String(a.values[sortField.id] ?? '');
+              const bVal = String(b.values[sortField.id] ?? '');
+              return aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' }) * dir;
+            });
+          }
+        }
+
+        const defaultItemId = opts.defaultItemId;
+        const hasDefault = !!(defaultItemId && sourceItems.some(i => i.id === defaultItemId));
 
         const placeholderOption: Layer = {
           id: `${layer.id}-opt-placeholder`,
@@ -1768,6 +1782,10 @@ export async function resolveCollectionLayers(
 
         return {
           ...layer,
+          attributes: {
+            ...(layer.attributes || {}),
+            ...(hasDefault ? { value: defaultItemId } : {}),
+          },
           children: [placeholderOption, ...generatedOptions],
         };
       } catch (error) {
@@ -1893,7 +1911,7 @@ function findFilterableCollectionIds(layers: Layer[]): Set<string> {
 function getFilterableCollectionTarget(
   conditionalVisibility: import('@/types').ConditionalVisibility,
   filterableIds: Set<string>
-): { collectionLayerId: string; operator: string } | null {
+): { collectionLayerId: string; operator: string; compareOperator?: string; compareValue?: number } | null {
   for (const group of conditionalVisibility.groups || []) {
     for (const condition of group.conditions) {
       if (
@@ -1902,7 +1920,12 @@ function getFilterableCollectionTarget(
         filterableIds.has(condition.collectionLayerId) &&
         (condition.operator === 'has_no_items' || condition.operator === 'has_items' || condition.operator === 'item_count')
       ) {
-        return { collectionLayerId: condition.collectionLayerId, operator: condition.operator };
+        return {
+          collectionLayerId: condition.collectionLayerId,
+          operator: condition.operator,
+          compareOperator: condition.compareOperator,
+          compareValue: condition.compareValue,
+        };
       }
     }
   }
@@ -1937,30 +1960,35 @@ function filterByVisibility(
         pageCollectionData,
         pageCollectionCounts,
       });
-      if (!isVisible) {
-        // If this layer targets a filterable collection, keep it hidden instead of removing
-        const filterTarget = getFilterableCollectionTarget(conditionalVisibility, filterableCollectionIds);
-        if (filterTarget) {
-          const dataAttr = filterTarget.operator === 'has_no_items'
-            ? 'data-collection-empty-state'
-            : 'data-collection-has-items';
-          return {
-            ...layer,
-            _dynamicStyles: {
-              ...(layer._dynamicStyles || {}),
-              display: 'none',
-            },
-            attributes: {
-              ...(layer.attributes || {}),
-              [dataAttr]: filterTarget.collectionLayerId,
-            },
-            children: layer.children
-              ? layer.children
-                .map(child => filterLayer(child, effectiveCollectionLayerData))
-                .filter((child): child is Layer => child !== null)
-              : undefined,
-          };
+      const filterTarget = getFilterableCollectionTarget(conditionalVisibility, filterableCollectionIds);
+      if (filterTarget) {
+        const attributes: Record<string, any> = {
+          ...(layer.attributes || {}),
+        };
+        if (filterTarget.operator === 'has_no_items') {
+          attributes['data-collection-empty-state'] = filterTarget.collectionLayerId;
+        } else if (filterTarget.operator === 'has_items') {
+          attributes['data-collection-has-items'] = filterTarget.collectionLayerId;
+        } else if (filterTarget.operator === 'item_count') {
+          attributes['data-collection-item-count'] = filterTarget.collectionLayerId;
+          attributes['data-collection-item-count-op'] = filterTarget.compareOperator || 'eq';
+          attributes['data-collection-item-count-value'] = String(filterTarget.compareValue ?? 0);
         }
+        return {
+          ...layer,
+          _dynamicStyles: {
+            ...(layer._dynamicStyles || {}),
+            display: isVisible ? '' : 'none',
+          },
+          attributes,
+          children: layer.children
+            ? layer.children
+              .map(child => filterLayer(child, effectiveCollectionLayerData))
+              .filter((child): child is Layer => child !== null)
+            : undefined,
+        };
+      }
+      if (!isVisible) {
         return null;
       }
     }

@@ -617,6 +617,7 @@ const LayerItem: React.FC<{
       nameMap[inputLayerId] = paramName;
       reverseMap[paramName] = inputLayerId;
     });
+    const inputLayerIds = Object.keys(nameMap);
     store.setNameMap(nameMap);
 
     // Populate input elements with values from URL params
@@ -642,6 +643,11 @@ const LayerItem: React.FC<{
 
     // Defer loadFromUrl to ensure FilterableCollection has mounted and subscribed
     setTimeout(() => store.loadFromUrl(), 0);
+
+    return () => {
+      const state = useFilterStore.getState();
+      state.removeNameMapEntries(inputLayerIds);
+    };
   }, [isEditMode, isFilterLayer]);
 
   React.useEffect(() => {
@@ -649,10 +655,11 @@ const LayerItem: React.FC<{
 
     const container = filterLayerRef.current;
     const filterLayerId = layer.id;
-    const { setFilterValue } = useFilterStore.getState();
+    const { setFilterValues } = useFilterStore.getState();
 
     const collectInputValues = () => {
       const nameMap: Record<string, string> = {};
+      const inputValues: Record<string, string> = {};
       const inputs = container.querySelectorAll('input, select, textarea');
       inputs.forEach(el => {
         const inputEl = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
@@ -661,8 +668,9 @@ const LayerItem: React.FC<{
         const nameAttr = inputEl.getAttribute('name');
         if (nameAttr) nameMap[inputLayerId] = nameAttr;
         const value = inputEl.type === 'checkbox' ? (inputEl as HTMLInputElement).checked.toString() : inputEl.value;
-        setFilterValue(filterLayerId, inputLayerId, value);
+        inputValues[inputLayerId] = value;
       });
+      setFilterValues(filterLayerId, inputValues);
       if (Object.keys(nameMap).length > 0) {
         useFilterStore.getState().setNameMap(nameMap);
       }
@@ -703,18 +711,26 @@ const LayerItem: React.FC<{
       container.addEventListener('input', handleInputChange);
       container.addEventListener('change', handleInputChange);
 
+      // Apply initial input values (including defaults) on mount.
+      collectInputValues();
+
       return () => {
         container.removeEventListener('click', handleButtonClick);
         container.removeEventListener('keydown', handleKeyDown);
         container.removeEventListener('input', handleInputChange);
         container.removeEventListener('change', handleInputChange);
+        useFilterStore.getState().clearFilter(filterLayerId);
         if (debounceTimer) clearTimeout(debounceTimer);
       };
     }
 
+    // Apply initial input values (including defaults) on mount.
+    collectInputValues();
+
     return () => {
       container.removeEventListener('click', handleButtonClick);
       container.removeEventListener('keydown', handleKeyDown);
+      useFilterStore.getState().clearFilter(filterLayerId);
       if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, [isFilterLayer, filterOnChange, isEditMode, layer.id]);
@@ -1636,6 +1652,13 @@ const LayerItem: React.FC<{
     if (htmlTag === 'select') {
       if (isInsideForm && !elementProps.name) {
         elementProps.name = layer.settings?.id || layer.id;
+      }
+
+      // Keep select uncontrolled while still supporting default selection
+      // from layer attributes (e.g. collection-sourced default option).
+      if ('value' in elementProps) {
+        elementProps.defaultValue = elementProps.value;
+        delete elementProps.value;
       }
 
       if (isEditMode && layer.settings?.optionsSource?.collectionId) {
