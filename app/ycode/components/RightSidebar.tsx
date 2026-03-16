@@ -210,6 +210,7 @@ const RightSidebar = React.memo(function RightSidebar({
   const getComponentById = useComponentsStore((state) => state.getComponentById);
   const componentDrafts = useComponentsStore((state) => state.componentDrafts);
   const addTextVariable = useComponentsStore((state) => state.addTextVariable);
+  const addRichTextVariable = useComponentsStore((state) => state.addRichTextVariable);
   const updateTextVariable = useComponentsStore((state) => state.updateTextVariable);
 
   const collections = useCollectionsStore((state) => state.collections);
@@ -1943,10 +1944,13 @@ const RightSidebar = React.memo(function RightSidebar({
 
             {/* Content Panel - show for text-editable layers */}
             {selectedLayer && isTextEditable(selectedLayer) && (() => {
-              // Get component variables if editing a component (only text variables for text content)
+              // Get component variables filtered to matching type for this layer
               const editingComponent = editingComponentId ? getComponentById(editingComponentId) : undefined;
               const allComponentVariables = editingComponent?.variables || [];
-              const componentVariables = allComponentVariables.filter(v => v.type !== 'image');
+              const isRichText = isRichTextLayer(selectedLayer);
+              const componentVariables = allComponentVariables.filter(v =>
+                isRichText ? v.type === 'rich_text' : (!v.type || v.type === 'text')
+              );
               const linkedVariableId = selectedLayer.variables?.text?.id;
               const linkedVariable = componentVariables.find(v => v.id === linkedVariableId);
 
@@ -1995,7 +1999,8 @@ const RightSidebar = React.memo(function RightSidebar({
                           onManageVariables={() => openVariablesDialog()}
                           onCreateVariable={editingComponentId ? async () => {
                             const contentValue = getContentValue(selectedLayer);
-                            const newId = await addTextVariable(editingComponentId, 'Text');
+                            const addFn = isRichText ? addRichTextVariable : addTextVariable;
+                            const newId = await addFn(editingComponentId, isRichText ? 'Rich text' : 'Text');
                             if (newId) {
                               await updateTextVariable(editingComponentId, newId, {
                                 default_value: createTextComponentVariableValue(contentValue),
