@@ -1,7 +1,6 @@
 import PageRenderer from '@/components/PageRenderer';
 import { fetchErrorPage } from '@/lib/page-fetcher';
 import { getSettingsByKeys } from '@/lib/repositories/settingsRepository';
-import { generateColorVariablesCss } from '@/lib/repositories/colorVariableRepository';
 import { generatePageMetadata } from '@/lib/generate-page-metadata';
 import type { Metadata } from 'next';
 
@@ -42,11 +41,8 @@ export default async function ErrorPagePreview({ params }: ErrorPagePreviewProps
 
   const { page, pageLayers, components, locale, availableLocales, translations } = pageData;
 
-  // Fetch draft CSS and color variables
-  const [draftCSS, colorVariablesCss] = await Promise.all([
-    fetchPreviewDraftCss(),
-    generateColorVariablesCss(),
-  ]);
+  // Fetch draft CSS (global custom code is handled by the preview layout)
+  const draftCSS = await fetchPreviewDraftCss();
 
   return (
     <PageRenderer
@@ -54,7 +50,6 @@ export default async function ErrorPagePreview({ params }: ErrorPagePreviewProps
       layers={pageLayers.layers || []}
       components={components}
       generatedCss={draftCSS}
-      colorVariablesCss={colorVariablesCss || undefined}
       locale={locale}
       availableLocales={availableLocales}
       isPreview={true}

@@ -4,7 +4,7 @@
  * Core logic for applying, detaching, and managing layer styles
  */
 
-import type { Layer, LayerStyle, TextStyle } from '@/types';
+import type { Layer, LayerStyle } from '@/types';
 
 /**
  * Apply a style to a layer
@@ -150,59 +150,9 @@ export function buildStyledUpdate(
 }
 
 /**
- * Update textStyles entries that reference a given style.
- * Only updates entries WITHOUT overrides (overridden entries keep their custom values).
- */
-function updateTextStylesWithStyle(
-  textStyles: Record<string, TextStyle>,
-  styleId: string,
-  newClasses: string,
-  newDesign?: Layer['design']
-): Record<string, TextStyle> | null {
-  let changed = false;
-  const updated: Record<string, TextStyle> = {};
-
-  for (const [key, ts] of Object.entries(textStyles)) {
-    if (ts.styleId === styleId && !ts.styleOverrides) {
-      updated[key] = { ...ts, classes: newClasses, design: newDesign };
-      changed = true;
-    } else {
-      updated[key] = ts;
-    }
-  }
-
-  return changed ? updated : null;
-}
-
-/**
- * Detach a style from all textStyles entries.
- * Keeps current classes/design but removes the style link.
- */
-function detachStyleFromTextStyles(
-  textStyles: Record<string, TextStyle>,
-  styleId: string,
-): Record<string, TextStyle> | null {
-  let changed = false;
-  const updated: Record<string, TextStyle> = {};
-
-  for (const [key, ts] of Object.entries(textStyles)) {
-    if (ts.styleId === styleId) {
-      const { styleId: _, styleOverrides: __, ...rest } = ts;
-      updated[key] = rest;
-      changed = true;
-    } else {
-      updated[key] = ts;
-    }
-  }
-
-  return changed ? updated : null;
-}
-
-/**
  * Update all layers using a specific style
  * Recursively traverses layer tree and updates layers that have the style applied
- * Also updates textStyles entries that reference the style
- * Only updates layers/entries WITHOUT overrides (overridden ones keep their custom values)
+ * Only updates layers WITHOUT overrides (overridden layers keep their custom values)
  */
 export function updateLayersWithStyle(
   layers: Layer[],
@@ -211,38 +161,24 @@ export function updateLayersWithStyle(
   newDesign?: Layer['design']
 ): Layer[] {
   return layers.map(layer => {
-    let updatedLayer = layer;
-
     // Update this layer if it uses the style and has no overrides
     if (layer.styleId === styleId && !layer.styleOverrides) {
-      updatedLayer = {
-        ...updatedLayer,
+      return {
+        ...layer,
         classes: newClasses,
         design: newDesign,
       };
     }
 
-    // Update textStyles entries that reference this style
-    if (layer.textStyles) {
-      const updatedTextStyles = updateTextStylesWithStyle(layer.textStyles, styleId, newClasses, newDesign);
-      if (updatedTextStyles) {
-        updatedLayer = updatedLayer === layer
-          ? { ...layer, textStyles: updatedTextStyles }
-          : { ...updatedLayer, textStyles: updatedTextStyles };
-      }
-    }
-
     // Recursively update children
     if (layer.children && layer.children.length > 0) {
-      const updatedChildren = updateLayersWithStyle(layer.children, styleId, newClasses, newDesign);
-      if (updatedChildren !== layer.children) {
-        updatedLayer = updatedLayer === layer
-          ? { ...layer, children: updatedChildren }
-          : { ...updatedLayer, children: updatedChildren };
-      }
+      return {
+        ...layer,
+        children: updateLayersWithStyle(layer.children, styleId, newClasses, newDesign),
+      };
     }
 
-    return updatedLayer;
+    return layer;
   });
 }
 
@@ -250,45 +186,30 @@ export function updateLayersWithStyle(
  * Detach a style from all layers
  * Used when a style is deleted
  * Keeps current classes/design values but removes the style link
- * Also detaches from textStyles entries that reference the style
  */
 export function detachStyleFromLayers(layers: Layer[], styleId: string): Layer[] {
   return layers.map(layer => {
-    let updatedLayer = layer;
-
     // Detach if this layer uses the style
     if (layer.styleId === styleId) {
       const { styleId: _, styleOverrides: __, ...rest } = layer;
-      updatedLayer = rest as Layer;
-    }
-
-    // Detach from textStyles entries
-    if (layer.textStyles) {
-      const updatedTextStyles = detachStyleFromTextStyles(layer.textStyles, styleId);
-      if (updatedTextStyles) {
-        updatedLayer = updatedLayer === layer
-          ? { ...layer, textStyles: updatedTextStyles }
-          : { ...updatedLayer, textStyles: updatedTextStyles };
-      }
+      return rest as Layer;
     }
 
     // Recursively detach from children
     if (layer.children && layer.children.length > 0) {
-      const updatedChildren = detachStyleFromLayers(layer.children, styleId);
-      if (updatedChildren !== layer.children) {
-        updatedLayer = updatedLayer === layer
-          ? { ...layer, children: updatedChildren }
-          : { ...updatedLayer, children: updatedChildren };
-      }
+      return {
+        ...layer,
+        children: detachStyleFromLayers(layer.children, styleId),
+      };
     }
 
-    return updatedLayer;
+    return layer;
   });
 }
 
 /**
  * Count how many layers use a specific style
- * Includes both direct layer.styleId and textStyles[*].styleId references
+ * Useful for showing usage count in UI and delete confirmations
  */
 export function countLayersUsingStyle(layers: Layer[], styleId: string): number {
   let count = 0;
@@ -296,14 +217,6 @@ export function countLayersUsingStyle(layers: Layer[], styleId: string): number 
   for (const layer of layers) {
     if (layer.styleId === styleId) {
       count++;
-    }
-
-    if (layer.textStyles) {
-      for (const ts of Object.values(layer.textStyles)) {
-        if (ts.styleId === styleId) {
-          count++;
-        }
-      }
     }
 
     if (layer.children && layer.children.length > 0) {
@@ -316,7 +229,7 @@ export function countLayersUsingStyle(layers: Layer[], styleId: string): number 
 
 /**
  * Get all layer IDs using a specific style
- * Includes layers that reference the style via textStyles[*].styleId
+ * Useful for UI highlights and bulk operations
  */
 export function getLayerIdsUsingStyle(layers: Layer[], styleId: string): string[] {
   const ids: string[] = [];
@@ -324,13 +237,6 @@ export function getLayerIdsUsingStyle(layers: Layer[], styleId: string): string[
   for (const layer of layers) {
     if (layer.styleId === styleId) {
       ids.push(layer.id);
-    } else if (layer.textStyles) {
-      for (const ts of Object.values(layer.textStyles)) {
-        if (ts.styleId === styleId) {
-          ids.push(layer.id);
-          break;
-        }
-      }
     }
 
     if (layer.children && layer.children.length > 0) {

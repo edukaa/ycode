@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -32,7 +32,7 @@ interface EffectControlsProps {
   activeTextStyleKey?: string | null;
 }
 
-const EffectControls = memo(function EffectControls({ layer, onLayerUpdate, activeTextStyleKey }: EffectControlsProps) {
+export default function EffectControls({ layer, onLayerUpdate, activeTextStyleKey }: EffectControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const showTextStyleControls = useEditorStore((state) => state.showTextStyleControls());
   const { updateDesignProperty, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
@@ -82,10 +82,7 @@ const EffectControls = memo(function EffectControls({ layer, onLayerUpdate, acti
           const blur = parseInt(parts[2]) || 0;
           const spread = parseInt(parts[3]) || 0;
           // Color is everything after the 4th underscore
-          let color = parts.slice(4).join('_');
-          if (color.startsWith('var(--')) {
-            color = `color:${color}`;
-          }
+          const color = parts.slice(4).join('_');
 
           return {
             id: `shadow-${Date.now()}-${index}`,
@@ -226,10 +223,7 @@ const EffectControls = memo(function EffectControls({ layer, onLayerUpdate, acti
   // Generate shadow CSS value from shadow object
   const generateShadowString = (shadow: Shadow): string => {
     const inset = shadow.position === 'inside' ? 'inset_' : '';
-    const color = shadow.color.startsWith('color:var(')
-      ? shadow.color.replace('color:', '')
-      : shadow.color;
-    return `${inset}${shadow.x}px_${shadow.y}px_${shadow.blur}px_${shadow.spread}px_${color}`;
+    return `${inset}${shadow.x}px_${shadow.y}px_${shadow.blur}px_${shadow.spread}px_${shadow.color}`;
   };
 
   // Generate full shadows value for all shadows
@@ -344,11 +338,8 @@ const EffectControls = memo(function EffectControls({ layer, onLayerUpdate, acti
   };
 
   const handleShadowColorChange = (value: string) => {
-    if (value.startsWith('color:var(')) {
-      updateEditingShadow({ color: value });
-    } else {
-      updateEditingShadow({ color: convertToRgba(value) });
-    }
+    const rgbaColor = convertToRgba(value);
+    updateEditingShadow({ color: rgbaColor });
   };
 
   const handleShadowXChange = (value: number) => {
@@ -703,5 +694,4 @@ const EffectControls = memo(function EffectControls({ layer, onLayerUpdate, acti
 
     </div>
   );
-});
-export default EffectControls;
+}

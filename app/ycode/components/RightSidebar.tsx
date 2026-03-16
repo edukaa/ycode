@@ -17,7 +17,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Icon from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -57,7 +56,6 @@ import LinkSettings, { type LinkSettingsValue } from './LinkSettings';
 import ComponentInstanceSidebar from './ComponentInstanceSidebar';
 import ComponentVariableOverrides from './ComponentVariableOverrides';
 import ExpandableRichTextEditor from './ExpandableRichTextEditor';
-import RichTextEditor from './RichTextEditor';
 import ComponentVariableLabel, { VARIABLE_TYPE_ICONS } from './ComponentVariableLabel';
 import InteractionsPanel from './InteractionsPanel';
 import LayoutControls from './LayoutControls';
@@ -86,12 +84,12 @@ import { useLayerLocks } from '@/hooks/use-layer-locks';
 import { classesToDesign, mergeDesign, removeConflictsForClass, getRemovedPropertyClasses } from '@/lib/tailwind-class-mapper';
 import { cn } from '@/lib/utils';
 import { sanitizeHtmlId } from '@/lib/html-utils';
-import { isFieldVariable, getCollectionVariable, findParentCollectionLayer, findAllParentCollectionLayers, isTextEditable, isTextContentLayer, isRichTextLayer, isHeadingLayer, findLayerWithParent, resetBindingsOnCollectionSourceChange, isInputInsideFilter, getLayerIndexes, indexedFindLayerById, indexedFindLayerWithParent, indexedFindParentCollectionLayer } from '@/lib/layer-utils';
+import { isFieldVariable, getCollectionVariable, findParentCollectionLayer, findAllParentCollectionLayers, isTextEditable, findLayerWithParent, resetBindingsOnCollectionSourceChange, isInputInsideFilter } from '@/lib/layer-utils';
 import { detachSpecificLayerFromComponent } from '@/lib/component-utils';
 import { convertContentToValue, parseValueToContent } from '@/lib/cms-variables-utils';
 import { createTextComponentVariableValue } from '@/lib/variable-utils';
-import { getRichTextValue, extractPlainTextFromTiptap, getCmsFieldBinding } from '@/lib/tiptap-utils';
-import { DEFAULT_TEXT_STYLES, getTextStyle, getTiptapTextContent } from '@/lib/text-format-utils';
+import { getRichTextValue } from '@/lib/tiptap-utils';
+import { DEFAULT_TEXT_STYLES, getTextStyle } from '@/lib/text-format-utils';
 import { buildFieldGroupsForLayer, getFieldIcon, isMultipleAssetField, MULTI_ASSET_COLLECTION_ID } from '@/lib/collection-field-utils';
 import { getInverseReferenceFields } from '@/lib/collection-utils';
 
@@ -203,7 +201,7 @@ const RightSidebar = React.memo(function RightSidebar({
   const layerLocksRef = useRef(layerLocks);
   layerLocksRef.current = layerLocks;
 
-  const currentDraft = usePagesStore((state) => currentPageId ? state.draftsByPageId[currentPageId] : null);
+  const draftsByPageId = usePagesStore((state) => state.draftsByPageId);
   const setDraftLayers = usePagesStore((state) => state.setDraftLayers);
   const pages = usePagesStore((state) => state.pages);
 
@@ -221,18 +219,28 @@ const RightSidebar = React.memo(function RightSidebar({
     if (editingComponentId) {
       return componentDrafts[editingComponentId] || [];
     } else if (currentPageId) {
-      return currentDraft ? currentDraft.layers : [];
+      const draft = draftsByPageId[currentPageId];
+      return draft ? draft.layers : [];
     }
     return [];
-  }, [editingComponentId, componentDrafts, currentPageId, currentDraft]);
+  }, [editingComponentId, componentDrafts, currentPageId, draftsByPageId]);
 
-  // Cached layer index for O(1) lookups
-  const layerIndexes = useMemo(() => getLayerIndexes(allLayers), [allLayers]);
+  // Helper to find layer by ID
+  const findLayerById = useCallback((layerId: string | null): Layer | null => {
+    if (!layerId || !allLayers.length) return null;
+
+    const stack: Layer[] = [...allLayers];
+    while (stack.length) {
+      const node = stack.shift()!;
+      if (node.id === layerId) return node;
+      if (node.children) stack.push(...node.children);
+    }
+    return null;
+  }, [allLayers]);
 
   const selectedLayer: Layer | null = useMemo(() => {
-    if (!selectedLayerId) return null;
-    return indexedFindLayerById(layerIndexes, selectedLayerId);
-  }, [selectedLayerId, layerIndexes]);
+    return findLayerById(selectedLayerId);
+  }, [selectedLayerId, findLayerById]);
 
   const selectedLayerRef = useRef(selectedLayer);
   selectedLayerRef.current = selectedLayer;
@@ -242,41 +250,44 @@ const RightSidebar = React.memo(function RightSidebar({
 
   // Get the layer whose interactions we're editing (different from selected layer during target selection)
   const interactionOwnerLayer: Layer | null = useMemo(() => {
-    if (!interactionOwnerLayerId) return null;
-    return indexedFindLayerById(layerIndexes, interactionOwnerLayerId);
-  }, [interactionOwnerLayerId, layerIndexes]);
+    return findLayerById(interactionOwnerLayerId);
+  }, [interactionOwnerLayerId, findLayerById]);
 
   // Check if selected layer is at root level (has no parent) - used to disable pagination
   const isSelectedLayerAtRoot: boolean = useMemo(() => {
-    if (!selectedLayerId) return false;
-    const result = indexedFindLayerWithParent(layerIndexes, selectedLayerId);
+    if (!selectedLayerId || !allLayers.length) return false;
+    const result = findLayerWithParent(allLayers, selectedLayerId);
     return result?.parent === null;
-  }, [selectedLayerId, layerIndexes]);
+  }, [selectedLayerId, allLayers]);
 
   // Check if selected collection is nested inside another collection
+  // If so, we hide the pagination option entirely (not just disable it)
   const isNestedInCollection: boolean = useMemo(() => {
     if (!selectedLayer || !selectedLayerId) return false;
+
     const collectionVar = getCollectionVariable(selectedLayer);
     if (!collectionVar) return false;
-    return !!indexedFindParentCollectionLayer(layerIndexes, selectedLayerId);
-  }, [selectedLayer, selectedLayerId, layerIndexes]);
+
+    const parentCollection = findParentCollectionLayer(allLayers, selectedLayerId);
+    return !!parentCollection;
+  }, [selectedLayer, selectedLayerId, allLayers]);
 
   // Check if link settings should be hidden:
   // - Buttons inside a form (they act as submit buttons)
   // - Any layer inside a button (the button itself handles the link)
   const shouldHideLinkSettings: boolean = useMemo(() => {
     if (!selectedLayer || !selectedLayerId) return false;
-    let parentId = layerIndexes.parentMap.get(selectedLayerId);
-    while (parentId) {
-      const parent = layerIndexes.layerMap.get(parentId);
-      if (!parent) break;
-      if (parent.name === 'button') return true;
-      if (parent.name === 'lightbox') return true;
-      if (parent.name === 'form' && selectedLayer.name === 'button') return true;
-      parentId = layerIndexes.parentMap.get(parentId);
+
+    let current = findLayerWithParent(allLayers, selectedLayerId)?.parent ?? null;
+    while (current) {
+      if (current.name === 'button') return true;
+      if (current.name === 'lightbox') return true;
+      if (current.name === 'form' && selectedLayer.name === 'button') return true;
+      const parentResult = findLayerWithParent(allLayers, current.id);
+      current = parentResult?.parent ?? null;
     }
     return false;
-  }, [selectedLayer, selectedLayerId, layerIndexes]);
+  }, [selectedLayer, selectedLayerId, allLayers]);
 
   // Check if pagination should be disabled (only for root-level case where we show a message)
   const isPaginationDisabled: boolean = useMemo(() => {
@@ -393,6 +404,14 @@ const RightSidebar = React.memo(function RightSidebar({
     }
   }, [selectedLayerId]);
 
+  // Helper function to check if layer is a heading
+  const isHeadingLayer = (layer: Layer | null): boolean => {
+    if (!layer) return false;
+    const headingTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'heading'];
+    return headingTags.includes(layer.name || '') ||
+           headingTags.includes(layer.settings?.tag || '');
+  };
+
   // Helper function to check if layer is a container/section/block
   const isContainerLayer = (layer: Layer | null): boolean => {
     if (!layer) return false;
@@ -405,7 +424,11 @@ const RightSidebar = React.memo(function RightSidebar({
            containerTags.includes(layer.settings?.tag || '');
   };
 
-  const isTextLayer = isTextContentLayer;
+  // Helper function to check if layer is a text element
+  const isTextLayer = (layer: Layer | null): boolean => {
+    if (!layer) return false;
+    return layer.name === 'text';
+  };
 
   // Helper function to check if layer is a button element
   const isButtonLayer = (layer: Layer | null): boolean => {
@@ -461,9 +484,9 @@ const RightSidebar = React.memo(function RightSidebar({
         return true;
 
       case 'typography':
-        // Typography controls: show in text edit mode or for text elements, rich text, buttons, icons, form inputs, body, and fraction
+        // Typography controls: show in text edit mode or for text elements, buttons, icons, form inputs, body, and fraction
         if (showTextStyleControls) return true;
-        return isTextLayer(layer) || isRichTextLayer(layer) || isButtonLayer(layer) || isIconLayer(layer) || isFormInputLayer(layer) || layer.id === 'body' || layer.name === 'slideFraction';
+        return isTextLayer(layer) || isButtonLayer(layer) || isIconLayer(layer) || isFormInputLayer(layer) || layer.id === 'body' || layer.name === 'slideFraction';
 
       case 'backgrounds':
         // Background controls: hide for text layers (image is in the color picker's image tab)
@@ -552,25 +575,20 @@ const RightSidebar = React.memo(function RightSidebar({
   const getDefaultTextTag = (layer: Layer | null): string => {
     if (!layer) return 'p';
     if (layer.settings?.tag) return layer.settings.tag;
-    if (layer.name === 'heading') return 'h2';
-    return 'p';
+    return 'p'; // Default to p
   };
 
-  // Tag options for heading elements (h1-h6)
-  const headingTagOptions = [
-    { value: 'h1', label: 'h1' },
-    { value: 'h2', label: 'h2' },
-    { value: 'h3', label: 'h3' },
-    { value: 'h4', label: 'h4' },
-    { value: 'h5', label: 'h5' },
-    { value: 'h6', label: 'h6' },
-  ] as const;
-
-  // Tag options for text elements (p, span, label)
+  // Text tag options with labels
   const textTagOptions = [
-    { value: 'p', label: 'p' },
-    { value: 'span', label: 'span' },
-    { value: 'label', label: 'label' },
+    { value: 'h1', label: 'Heading 1' },
+    { value: 'h2', label: 'Heading 2' },
+    { value: 'h3', label: 'Heading 3' },
+    { value: 'h4', label: 'Heading 4' },
+    { value: 'h5', label: 'Heading 5' },
+    { value: 'h6', label: 'Heading 6' },
+    { value: 'p', label: 'Paragraph' },
+    { value: 'span', label: 'Span' },
+    { value: 'label', label: 'Label' },
   ] as const;
 
   // Classes input state (synced with selectedLayer)
@@ -609,7 +627,7 @@ const RightSidebar = React.memo(function RightSidebar({
   }, [classesInput]);
 
   // Get applied layer style and its classes
-  const getStyleById = useLayerStylesStore((state) => state.getStyleById);
+  const { getStyleById } = useLayerStylesStore();
   const appliedStyle = selectedLayer?.styleId ? getStyleById(selectedLayer.styleId) : undefined;
   const styleClassesArray = useMemo(() => {
     if (!appliedStyle || !appliedStyle.classes) return [];
@@ -1155,7 +1173,7 @@ const RightSidebar = React.memo(function RightSidebar({
   };
 
   const getSortLinkedInputName = (inputLayerId: string): string => {
-    const inputLayer = indexedFindLayerById(layerIndexes, inputLayerId);
+    const inputLayer = findLayerById(inputLayerId);
     if (!inputLayer) return `Unknown [${inputLayerId}]`;
     const layerName = inputLayer.customName || inputLayer.name || 'Input';
     return `${layerName} [${inputLayerId}]`;
@@ -1357,8 +1375,7 @@ const RightSidebar = React.memo(function RightSidebar({
   // Helper: Add or replace pagination wrapper
   const addOrReplacePaginationWrapper = (collectionLayerId: string, mode: 'pages' | 'load_more') => {
     const currentLayers = getCurrentLayersFromStore();
-    const idx = getLayerIndexes(currentLayers);
-    const parentResult = indexedFindLayerWithParent(idx, collectionLayerId);
+    const parentResult = findLayerWithParent(currentLayers, collectionLayerId);
     const parentLayer = parentResult?.parent;
 
     if (!parentLayer) {
@@ -1371,19 +1388,24 @@ const RightSidebar = React.memo(function RightSidebar({
       ? createPagesWrapper(collectionLayerId)
       : createLoadMoreWrapper(collectionLayerId);
 
-    const parentChildren = parentLayer.children || [];
+    // Get parent's CURRENT children from fresh lookup
+    const freshParentResult = findLayerWithParent(currentLayers, parentLayer.id);
+    const freshParent = freshParentResult?.layer || parentLayer;
+    const parentChildren = freshParent.children || [];
 
     const collectionIndex = parentChildren.findIndex(c => c.id === collectionLayerId);
     const existingPaginationIndex = parentChildren.findIndex(c => c.id === paginationWrapperId);
 
     let newChildren: Layer[];
     if (existingPaginationIndex === -1) {
+      // Add new wrapper after collection
       newChildren = [
         ...parentChildren.slice(0, collectionIndex + 1),
         paginationWrapper,
         ...parentChildren.slice(collectionIndex + 1),
       ];
     } else {
+      // Replace existing wrapper
       newChildren = parentChildren.map(c => c.id === paginationWrapperId ? paginationWrapper : c);
     }
 
@@ -1393,14 +1415,15 @@ const RightSidebar = React.memo(function RightSidebar({
   // Helper: Remove pagination wrapper
   const removePaginationWrapper = (collectionLayerId: string) => {
     const currentLayers = getCurrentLayersFromStore();
-    const idx = getLayerIndexes(currentLayers);
-    const parentResult = indexedFindLayerWithParent(idx, collectionLayerId);
+    const parentResult = findLayerWithParent(currentLayers, collectionLayerId);
     const parentLayer = parentResult?.parent;
 
     if (!parentLayer) return;
 
     const paginationWrapperId = `${collectionLayerId}-pagination-wrapper`;
-    const parentChildren = parentLayer.children || [];
+    const freshParentResult = findLayerWithParent(currentLayers, parentLayer.id);
+    const freshParent = freshParentResult?.layer || parentLayer;
+    const parentChildren = freshParent.children || [];
 
     const newChildren = parentChildren.filter(c => c.id !== paginationWrapperId);
     handleLayerUpdate(parentLayer.id, { children: newChildren });
@@ -1484,11 +1507,24 @@ const RightSidebar = React.memo(function RightSidebar({
     }
   };
 
-  // Get parent collection layer for the selected layer (O(1) via index)
+  // Get parent collection layer for the selected layer
   const parentCollectionLayer = useMemo(() => {
-    if (!selectedLayerId) return null;
-    return indexedFindParentCollectionLayer(layerIndexes, selectedLayerId);
-  }, [selectedLayerId, layerIndexes]);
+    if (!selectedLayerId || !currentPageId) return null;
+
+    // Get layers from either component draft or page draft
+    let layers: Layer[] = [];
+    if (editingComponentId) {
+      layers = componentDrafts[editingComponentId] || [];
+    } else {
+      const draft = draftsByPageId[currentPageId];
+      layers = draft ? draft.layers : [];
+    }
+
+    if (!layers.length) return null;
+
+    // Use the utility function from layer-utils
+    return findParentCollectionLayer(layers, selectedLayerId);
+  }, [selectedLayerId, editingComponentId, componentDrafts, currentPageId, draftsByPageId]);
 
   // Get collection fields if parent collection layer exists
   const currentPage = useMemo(() => {
@@ -1517,9 +1553,17 @@ const RightSidebar = React.memo(function RightSidebar({
 
   // Build field groups for multi-source inline variable selection
   const fieldGroups = useMemo(() => {
-    if (!selectedLayerId || !allLayers.length) return undefined;
-    return buildFieldGroupsForLayer(selectedLayerId, allLayers, currentPage, fields, collections);
-  }, [selectedLayerId, allLayers, currentPage, fields, collections]);
+    if (!selectedLayerId) return undefined;
+    let layers: Layer[] = [];
+    if (editingComponentId) {
+      layers = componentDrafts[editingComponentId] || [];
+    } else if (currentPageId) {
+      const draft = draftsByPageId[currentPageId];
+      layers = draft ? draft.layers : [];
+    }
+    if (!layers.length) return undefined;
+    return buildFieldGroupsForLayer(selectedLayerId, layers, currentPage, fields, collections);
+  }, [selectedLayerId, editingComponentId, componentDrafts, currentPageId, draftsByPageId, currentPage, fields, collections]);
 
   // Get collection fields for the currently selected collection layer (for Sort By dropdown)
   const selectedCollectionFields = useMemo(() => {
@@ -1711,13 +1755,12 @@ const RightSidebar = React.memo(function RightSidebar({
         {/* Design tab */}
         <TabsContent value="design" className="flex-1 flex flex-col divide-y overflow-y-auto no-scrollbar data-[state=inactive]:hidden overflow-x-hidden mt-0">
 
-          {/* Layer Styles Panel - hide in text style mode except for richText sublayers */}
-          {(!showTextStyleControls || (selectedLayer && isRichTextLayer(selectedLayer))) && (
+          {/* Layer Styles Panel - only show for default layer style and not in text style mode */}
+          {!showTextStyleControls && (
             <LayerStylesPanel
               layer={selectedLayer}
               pageId={currentPageId}
               onLayerUpdate={handleLayerUpdate}
-              activeTextStyleKey={selectedLayer && isRichTextLayer(selectedLayer) ? activeTextStyleKey : null}
             />
           )}
 
@@ -1906,39 +1949,36 @@ const RightSidebar = React.memo(function RightSidebar({
                 </div>
               )}
 
-              {/* Tag Selector - For heading and text layers */}
-              {(selectedLayer?.name === 'heading' || (selectedLayer?.name === 'text' && !isContainerLayer(selectedLayer))) && (() => {
-                const tagOptions = selectedLayer?.name === 'heading' ? headingTagOptions : textTagOptions;
-                return (
-                  <div className="grid grid-cols-3">
-                    <Label variant="muted">Tag</Label>
-                    <div className="col-span-2 *:w-full">
-                      <Select value={textTag} onValueChange={handleTextTagChange}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select...">
-                            {textTag && (() => {
-                              const option = tagOptions.find(opt => opt.value === textTag);
-                              return option ? option.label : textTag;
-                            })()}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {tagOptions.map((option) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                              >
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </div>
+              {/* Text Tag Selector - Only for text layers (not containers) */}
+              {selectedLayer?.name === 'text' && !isContainerLayer(selectedLayer) && (
+                <div className="grid grid-cols-3">
+                  <Label variant="muted">Tag</Label>
+                  <div className="col-span-2 *:w-full">
+                    <Select value={textTag} onValueChange={handleTextTagChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select...">
+                          {textTag && (() => {
+                            const option = textTagOptions.find(opt => opt.value === textTag);
+                            return option ? option.label : textTag;
+                          })()}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {textTagOptions.map((option) => (
+                            <SelectItem
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
-                );
-              })()}
+                </div>
+              )}
             </div>
 
             {/* Content Panel - show for text-editable layers */}
@@ -2032,69 +2072,24 @@ const RightSidebar = React.memo(function RightSidebar({
                           </div>
                         </Button>
                       ) : (isTextEditingOnCanvas && editingLayerIdOnCanvas === selectedLayerId) ? (
+                        // Don't render RichTextEditor while canvas text editor is active
+                        // to prevent race conditions when saving
                         <Empty className="min-h-8 py-2">
                           <EmptyDescription>You are editing the text directly on canvas.</EmptyDescription>
                         </Empty>
-                      ) : isTextLayer(selectedLayer) ? (
-                        <RichTextEditor
+                      ) : (
+                        <ExpandableRichTextEditor
                           key={selectedLayerId}
                           value={getContentValue(selectedLayer)}
                           onChange={handleContentChange}
                           placeholder="Enter text..."
-                          withFormatting={true}
-                          showFormattingToolbar={false}
+                          sheetDescription="Element content"
                           fieldGroups={fieldGroups}
                           allFields={fields}
                           collections={collections}
+                          disabled={showTextStyleControls}
                         />
-                      ) : (() => {
-                        const contentValue = getContentValue(selectedLayer);
-                        const cmsBinding = isRichTextLayer(selectedLayer) ? getCmsFieldBinding(contentValue) : null;
-
-                        if (cmsBinding) {
-                          return (
-                            <Button
-                              asChild
-                              variant="data"
-                              className="justify-between!"
-                            >
-                              <div>
-                                <span className="flex items-center gap-1.5 truncate">
-                                  <Icon name="database" className="size-3 opacity-60 shrink-0" />
-                                  <span className="truncate">{cmsBinding.label || 'CMS Field'}</span>
-                                </span>
-                                <Button
-                                  className="size-4! p-0! shrink-0"
-                                  variant="outline"
-                                  onClick={() => {
-                                    handleContentChange({
-                                      type: 'doc',
-                                      content: [{ type: 'paragraph' }],
-                                    });
-                                  }}
-                                >
-                                  <Icon name="x" className="size-2" />
-                                </Button>
-                              </div>
-                            </Button>
-                          );
-                        }
-
-                        return (
-                          <ExpandableRichTextEditor
-                            key={selectedLayerId}
-                            value={contentValue}
-                            onChange={handleContentChange}
-                            placeholder="Enter text..."
-                            sheetDescription="Element content"
-                            fieldGroups={fieldGroups}
-                            allFields={fields}
-                            collections={collections}
-                            disabled={showTextStyleControls}
-                            buttonOnly={isRichTextLayer(selectedLayer)}
-                          />
-                        );
-                      })()}
+                      )}
                     </div>
                   </div>
                 </SettingsPanel>
@@ -2102,7 +2097,7 @@ const RightSidebar = React.memo(function RightSidebar({
             })()}
 
             {/* Link Settings - hide for form-related layers, buttons inside forms, and layers inside buttons */}
-            {selectedLayer && !['form', 'select', 'input', 'textarea', 'checkbox', 'radio', 'label', 'lightbox', 'hr', 'richText'].includes(selectedLayer.name) && selectedLayer.settings?.tag !== 'label' && !shouldHideLinkSettings && (
+            {selectedLayer && !['form', 'select', 'input', 'textarea', 'checkbox', 'radio', 'label', 'lightbox', 'hr'].includes(selectedLayer.name) && selectedLayer.settings?.tag !== 'label' && !shouldHideLinkSettings && (
               <LinkSettings
                 layer={selectedLayer}
                 onLayerUpdate={handleLayerUpdate}

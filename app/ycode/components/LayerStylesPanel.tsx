@@ -38,22 +38,18 @@ import {
   resetLayerToStyle,
 } from '@/lib/layer-style-utils';
 import { detachStyleAcrossStores, updateStyleAcrossStores } from '@/lib/layer-style-store-utils';
-import { getStyleGroup, getTextStyleGroup, isStyleGroupCompatible } from '@/lib/layer-style-groups';
-import { DEFAULT_TEXT_STYLES } from '@/lib/text-format-utils';
-import type { Layer, LayerStyle, TextStyle } from '@/types';
+import type { Layer, LayerStyle } from '@/types';
 
 interface LayerStylesPanelProps {
   layer: Layer | null;
   pageId: string | null;
   onLayerUpdate: (layerId: string, updates: Partial<Layer>) => void;
-  activeTextStyleKey?: string | null;
 }
 
 export default function LayerStylesPanel({
   layer,
   pageId,
   onLayerUpdate,
-  activeTextStyleKey,
 }: LayerStylesPanelProps) {
   const {
     styles,
@@ -74,95 +70,45 @@ export default function LayerStylesPanel({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [styleToDelete, setStyleToDelete] = useState<string | null>(null);
 
-  const isTextStyleMode = !!activeTextStyleKey;
+  // Styles are loaded during app initialization (no need to load here)
 
-  // Determine the style group for this element
-  const currentGroup = isTextStyleMode
-    ? getTextStyleGroup(activeTextStyleKey!)
-    : layer
-      ? getStyleGroup(layer.name)
-      : 'block';
+  // Get the applied style if any
+  const appliedStyle = layer?.styleId ? getStyleById(layer.styleId) : undefined;
+  const hasOverrides = layer && appliedStyle ? hasStyleOverrides(layer, appliedStyle) : false;
 
-  // Filter styles to show matching group (handles legacy group compatibility)
-  const filteredStyles = styles.filter((s) => isStyleGroupCompatible(s.group, currentGroup));
+  // Get current layer's classes and design
+  const currentClasses = layer
+    ? Array.isArray(layer.classes)
+      ? layer.classes.join(' ')
+      : layer.classes || ''
+    : '';
 
-  // Get the current text style when in text style mode
-  const currentTextStyle: TextStyle | undefined = isTextStyleMode && layer?.textStyles
-    ? layer.textStyles[activeTextStyleKey!] ?? DEFAULT_TEXT_STYLES[activeTextStyleKey!]
-    : undefined;
-
-  // Get the applied style - from text style or layer
-  const appliedStyleId = isTextStyleMode
-    ? currentTextStyle?.styleId
-    : layer?.styleId;
-  const appliedStyle = appliedStyleId ? getStyleById(appliedStyleId) : undefined;
-
-  // Check for overrides
-  const hasOverrides = (() => {
-    if (!appliedStyle) return false;
-    if (isTextStyleMode) {
-      return !!currentTextStyle?.styleOverrides;
-    }
-    return layer ? hasStyleOverrides(layer, appliedStyle) : false;
-  })();
-
-  // Get current classes and design (from text style or layer)
-  const currentClasses = isTextStyleMode
-    ? currentTextStyle?.classes || ''
-    : layer
-      ? Array.isArray(layer.classes)
-        ? layer.classes.join(' ')
-        : layer.classes || ''
-      : '';
-
-  const currentDesign = isTextStyleMode
-    ? currentTextStyle?.design
-    : layer?.design;
-
-  // Helper to update a text style on the layer
-  const updateTextStyle = useCallback((updates: Partial<TextStyle>) => {
-    if (!layer || !activeTextStyleKey) return;
-    const currentTextStyles = layer.textStyles ?? { ...DEFAULT_TEXT_STYLES };
-    const existingStyle = currentTextStyles[activeTextStyleKey] || {};
-    onLayerUpdate(layer.id, {
-      textStyles: {
-        ...currentTextStyles,
-        [activeTextStyleKey]: { ...existingStyle, ...updates },
-      },
-    });
-  }, [layer, activeTextStyleKey, onLayerUpdate]);
+  const currentDesign = layer?.design;
 
   /**
-   * Create a new style from current layer or text style
+   * Create a new style from current layer
    */
   const handleCreateStyle = useCallback(async () => {
     if (!layer || !newStyleName.trim()) return;
 
-    const style = await createStyle(newStyleName.trim(), currentClasses, currentDesign, currentGroup);
+    const style = await createStyle(newStyleName.trim(), currentClasses, currentDesign);
 
     if (style) {
-      if (isTextStyleMode) {
-        updateTextStyle({
-          classes: style.classes,
-          design: style.design,
-          styleId: style.id,
-          styleOverrides: undefined,
-        });
-      } else {
-        const updatedLayer = applyStyleToLayer(layer, style);
-        onLayerUpdate(layer.id, updatedLayer);
-      }
+      // Automatically apply the new style to the current layer
+      const updatedLayer = applyStyleToLayer(layer, style);
+      onLayerUpdate(layer.id, updatedLayer);
       setNewStyleName('');
       setIsCreating(false);
 
+      // Broadcast style creation to collaborators
       if (liveLayerStyleUpdates) {
         liveLayerStyleUpdates.broadcastStyleCreate(style);
       }
     }
-  }, [layer, newStyleName, currentClasses, currentDesign, currentGroup, createStyle, onLayerUpdate, liveLayerStyleUpdates, isTextStyleMode, updateTextStyle]);
+  }, [layer, newStyleName, currentClasses, currentDesign, createStyle, onLayerUpdate, liveLayerStyleUpdates]);
 
   /**
-   * Apply a style to the current layer or text style
+   * Apply a style to the current layer
    */
   const handleApplyStyle = useCallback((styleId: string) => {
     if (!layer || !styleId) return;
@@ -170,95 +116,75 @@ export default function LayerStylesPanel({
     const style = getStyleById(styleId);
     if (!style) return;
 
-    if (isTextStyleMode) {
-      updateTextStyle({
-        classes: style.classes,
-        design: style.design,
-        styleId: style.id,
-        styleOverrides: undefined,
-      });
-    } else {
-      const updatedLayer = applyStyleToLayer(layer, style);
-      onLayerUpdate(layer.id, {
-        classes: updatedLayer.classes,
-        design: updatedLayer.design,
-        styleId: updatedLayer.styleId,
-        styleOverrides: undefined,
-      });
-    }
-  }, [layer, getStyleById, onLayerUpdate, isTextStyleMode, updateTextStyle]);
+    const updatedLayer = applyStyleToLayer(layer, style);
+    onLayerUpdate(layer.id, {
+      classes: updatedLayer.classes,
+      design: updatedLayer.design,
+      styleId: updatedLayer.styleId,
+      styleOverrides: undefined,
+    });
+  }, [layer, getStyleById, onLayerUpdate]);
 
   /**
-   * Detach style from current layer or text style
+   * Detach style from current layer
+   * Copies the style's values to the layer before detaching
    */
   const handleDetachStyle = useCallback(() => {
     if (!layer) return;
 
-    if (isTextStyleMode) {
-      updateTextStyle({
-        styleId: undefined,
-        styleOverrides: undefined,
-      });
-    } else {
-      const updatedLayer = detachStyleFromLayer(layer, appliedStyle);
-      onLayerUpdate(layer.id, {
-        classes: updatedLayer.classes,
-        design: updatedLayer.design,
-        styleId: undefined,
-        styleOverrides: undefined,
-      });
-    }
-  }, [layer, appliedStyle, onLayerUpdate, isTextStyleMode, updateTextStyle]);
+    const updatedLayer = detachStyleFromLayer(layer, appliedStyle);
+
+    // Send only the changed fields to onLayerUpdate
+    onLayerUpdate(layer.id, {
+      classes: updatedLayer.classes,
+      design: updatedLayer.design,
+      styleId: undefined,
+      styleOverrides: undefined,
+    });
+  }, [layer, appliedStyle, onLayerUpdate]);
 
   /**
-   * Reset overrides on current layer or text style
+   * Reset overrides on current layer
    */
   const handleResetOverrides = useCallback(() => {
     if (!layer || !appliedStyle) return;
 
-    if (isTextStyleMode) {
-      updateTextStyle({
-        classes: appliedStyle.classes,
-        design: appliedStyle.design,
-        styleOverrides: undefined,
-      });
-    } else {
-      const updatedLayer = resetLayerToStyle(layer, appliedStyle);
-      onLayerUpdate(layer.id, {
-        classes: updatedLayer.classes,
-        design: updatedLayer.design,
-        styleOverrides: undefined,
-      });
-    }
-  }, [layer, appliedStyle, onLayerUpdate, isTextStyleMode, updateTextStyle]);
+    const updatedLayer = resetLayerToStyle(layer, appliedStyle);
+    onLayerUpdate(layer.id, {
+      classes: updatedLayer.classes,
+      design: updatedLayer.design,
+      styleOverrides: undefined,
+    });
+  }, [layer, appliedStyle, onLayerUpdate]);
 
   /**
-   * Update style with current values
+   * Update style with current layer's values
    */
   const handleUpdateStyle = useCallback(async () => {
     if (!layer || !appliedStyle) return;
 
+    // Update the style in the database
     await updateStyle(appliedStyle.id, {
       classes: currentClasses,
       design: currentDesign,
     });
 
-    // Propagate style update to all layers (including textStyles entries)
+    // Update all layers using this style across all pages and components
     updateStyleAcrossStores(appliedStyle.id, currentClasses, currentDesign);
 
-    if (isTextStyleMode) {
-      updateTextStyle({ styleOverrides: undefined });
-    } else {
-      onLayerUpdate(layer.id, { styleOverrides: undefined });
-    }
+    // Clear overrides from the current layer since it now matches the style
+    onLayerUpdate(layer.id, {
+      styleOverrides: undefined,
+    });
 
+    // Broadcast style update to collaborators
     if (liveLayerStyleUpdates) {
       liveLayerStyleUpdates.broadcastStyleUpdate(appliedStyle.id, {
         classes: currentClasses,
         design: currentDesign,
       });
     }
-  }, [layer, appliedStyle, currentClasses, currentDesign, updateStyle, onLayerUpdate, liveLayerStyleUpdates, isTextStyleMode, updateTextStyle]);
+  }, [layer, appliedStyle, currentClasses, currentDesign, updateStyle, onLayerUpdate, liveLayerStyleUpdates]);
 
   /**
    * Open delete confirmation dialog
@@ -370,26 +296,27 @@ export default function LayerStylesPanel({
               <div className="flex items-center gap-2">
                 <Select
                   onValueChange={handleApplyStyle}
-                  value={appliedStyleId || ''}
+                  value={layer?.styleId || ''}
                 >
                   <SelectTrigger className="flex-1">
-                    {filteredStyles.length === 0 ? (
-                    <span className="opacity-50">Apply layer style...</span>
+                    {styles.length === 0 ? (
+                    <span className="opacity-50">Select a style...</span>
                     ) : (
-                    <SelectValue placeholder="Apply layer style..." />
+                    <SelectValue placeholder="Select..." />
                     )}
+                    {/* Show "Customised" badge when there are overrides */}
                     {hasOverrides && (
                       <span className="ml-auto text-yellow-400 text-[10px] pr-1">Customized</span>
                     )}
                   </SelectTrigger>
                   <SelectContent>
-                    {filteredStyles.length === 0 ? (
+                    {styles.length === 0 ? (
                       <Empty>
                         <EmptyTitle>No layers styles</EmptyTitle>
                       </Empty>
                     ) : (
                       <SelectGroup>
-                        {filteredStyles.map((style) => (
+                        {styles.map((style) => (
                           <SelectItem key={style.id} value={style.id}>
                             {style.name}
                           </SelectItem>

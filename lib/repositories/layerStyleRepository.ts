@@ -16,7 +16,6 @@ export interface CreateLayerStyleData {
   name: string;
   classes: string;
   design?: LayerStyle['design'];
-  group?: string;
 }
 
 /**
@@ -140,7 +139,6 @@ export async function createStyle(
       name: styleData.name,
       classes: styleData.classes,
       design: styleData.design,
-      group: styleData.group,
       content_hash: contentHash,
       is_published: false,
     })
@@ -253,7 +251,6 @@ export async function publishLayerStyle(draftStyleId: string): Promise<LayerStyl
       name: draftStyle.name,
       classes: draftStyle.classes,
       design: draftStyle.design,
-      group: draftStyle.group,
       content_hash: draftStyle.content_hash, // Copy hash from draft
       is_published: true,
       updated_at: new Date().toISOString(),
@@ -305,7 +302,6 @@ export async function publishLayerStyles(styleIds: string[]): Promise<{ count: n
     name: draft.name,
     classes: draft.classes,
     design: draft.design,
-    group: draft.group,
     content_hash: draft.content_hash,
     is_published: true,
     updated_at: new Date().toISOString(),

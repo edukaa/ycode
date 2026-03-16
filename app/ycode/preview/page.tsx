@@ -3,7 +3,6 @@ import { fetchHomepage, fetchErrorPage } from '@/lib/page-fetcher';
 import PageRenderer from '@/components/PageRenderer';
 import PasswordForm from '@/components/PasswordForm';
 import { getSettingsByKeys } from '@/lib/repositories/settingsRepository';
-import { generateColorVariablesCss } from '@/lib/repositories/colorVariableRepository';
 import { generatePageMetadata } from '@/lib/generate-page-metadata';
 import { parseAuthCookie, getPasswordProtection, fetchFoldersForAuth } from '@/lib/page-auth';
 import type { Metadata } from 'next';
@@ -43,11 +42,8 @@ export default async function Home() {
     );
   }
 
-  // Fetch draft CSS and color variables
-  const [draftCSS, colorVariablesCss] = await Promise.all([
-    fetchPreviewDraftCss(),
-    generateColorVariablesCss(),
-  ]);
+  // Fetch draft CSS (global custom code is handled by the preview layout)
+  const draftCSS = await fetchPreviewDraftCss();
 
   // Check password protection for homepage (using all folders for preview)
   const folders = await fetchFoldersForAuth(false);
@@ -67,7 +63,6 @@ export default async function Home() {
           layers={errorPageLayers.layers || []}
           components={errorComponents}
           generatedCss={draftCSS}
-          colorVariablesCss={colorVariablesCss || undefined}
           isPreview={true}
           passwordProtection={{
             pageId: protection.protectedBy === 'page' ? protection.protectedById : undefined,
@@ -101,7 +96,6 @@ export default async function Home() {
       layers={data.pageLayers.layers || []}
       components={data.components}
       generatedCss={draftCSS}
-      colorVariablesCss={colorVariablesCss || undefined}
       locale={data.locale}
       availableLocales={data.availableLocales}
       isPreview={true}

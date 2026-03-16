@@ -227,7 +227,6 @@ export interface LayerSettings {
 export interface LayerStyle {
   id: string;
   name: string;
-  group?: string; // Element category (e.g. "text", "block", "button") for scoped filtering
 
   // Style data
   classes: string;
@@ -288,8 +287,6 @@ export interface TextStyle {
   label?: string; // Display label for the style (e.g., "Bold", "Italic")
   classes?: string;
   design?: DesignProperties;
-  styleId?: string; // Layer style applied to this text style
-  styleOverrides?: { classes?: string; design?: DesignProperties };
 }
 
 export interface Layer {
@@ -1030,16 +1027,6 @@ export interface Setting {
   id: string;
   key: string;
   value: any;
-  created_at: string;
-  updated_at: string;
-}
-
-// Color Variables
-export interface ColorVariable {
-  id: string;
-  name: string;
-  value: string;
-  sort_order: number;
   created_at: string;
   updated_at: string;
 }

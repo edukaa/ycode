@@ -1,6 +1,9 @@
 import { getSettingsByKeys } from '@/lib/repositories/settingsRepository';
 
-/** Preview layout — injects global custom body code. */
+/**
+ * Preview layout — injects global custom body code.
+ * Global head code is handled by the root layout for all routes.
+ */
 export default async function PreviewLayout({
   children,
 }: {

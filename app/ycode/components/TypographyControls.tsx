@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,6 @@ import { extractMeasurementValue } from '@/lib/measurement-utils';
 import { removeSpaces } from '@/lib/utils';
 import { getFontAvailableWeights, FONT_WEIGHTS } from '@/lib/font-utils';
 import { buildBgImgVarName } from '@/lib/tailwind-class-mapper';
-import { isTextContentLayer } from '@/lib/layer-utils';
 import type { Collection, CollectionField, Layer } from '@/types';
 import type { FieldGroup } from '@/lib/collection-field-utils';
 import ColorPropertyField from './ColorPropertyField';
@@ -36,7 +35,7 @@ interface TypographyControlsProps {
   collections?: Collection[];
 }
 
-const TypographyControls = memo(function TypographyControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: TypographyControlsProps) {
+export default function TypographyControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: TypographyControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const showTextStyleControls = useEditorStore((state) => state.showTextStyleControls());
   const { updateDesignProperty, updateDesignProperties, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
@@ -233,9 +232,9 @@ const TypographyControls = memo(function TypographyControls({ layer, onLayerUpda
     debouncedUpdateDesignProperty('typography', 'underlineOffset', sanitized || null);
   };
 
-  // Check if the layer is an icon or text-content element
+  // Check if the layer is an icon or text
   const isIcon = layer?.name === 'icon';
-  const isText = isTextContentLayer(layer);
+  const isText = layer?.name === 'text';
 
   const bgImageRef = useRef<TextBackgroundImageTabHandle>(null);
   const handleImageActivate = useCallback(() => bgImageRef.current?.activate(), []);
@@ -589,5 +588,4 @@ const TypographyControls = memo(function TypographyControls({ layer, onLayerUpda
       </div>
     </div>
   );
-});
-export default TypographyControls;
+}

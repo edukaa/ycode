@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettingByKey, setSetting } from '@/lib/repositories/settingsRepository';
-import { clearAllCache } from '@/lib/services/cacheService';
 
 /**
  * GET /ycode/api/settings/[key]
@@ -54,8 +53,6 @@ export async function PUT(
     }
 
     await setSetting(key, value);
-
-    await clearAllCache();
 
     return NextResponse.json({
       data: { key, value },

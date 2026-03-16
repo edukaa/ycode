@@ -59,13 +59,11 @@ import { flattenFieldGroups, hasFieldsMatching, DISPLAYABLE_FIELD_TYPES, type Fi
 import { DynamicVariable, getDynamicVariableLabel } from '@/lib/tiptap-extensions/dynamic-variable';
 import { RichTextComponent } from '@/lib/tiptap-extensions/rich-text-component';
 import { RichTextLink, getLinkSettingsFromMark } from '@/lib/tiptap-extensions/rich-text-link';
-import { RichTextImage } from '@/lib/tiptap-extensions/rich-text-image';
 import RichTextLinkPopover from './RichTextLinkPopover';
 import RichTextComponentPicker from './RichTextComponentPicker';
 import RichTextComponentBlock from './RichTextComponentBlock';
-import type { Layer, LinkSettings, LinkType, Asset } from '@/types';
+import type { Layer, LinkSettings, LinkType } from '@/types';
 import { DEFAULT_TEXT_STYLES } from '@/lib/text-format-utils';
-import { useEditorStore } from '@/stores/useEditorStore';
 
 interface RichTextEditorProps {
   value: string | any; // string for simple text, Tiptap JSON when withFormatting=true
@@ -324,7 +322,6 @@ const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false);
   const [componentPickerOpen, setComponentPickerOpen] = useState(false);
-  const openFileManager = useEditorStore((s) => s.openFileManager);
   // Track if update is coming from editor to prevent infinite loop
   const isInternalUpdateRef = useRef(false);
 
@@ -365,16 +362,16 @@ const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(({
         ListItem,
         Blockquote,
         Code,
-        RichTextImage,
       ];
 
-      // Always include heading extension so content with headings is preserved
-      // even in compact variant (toolbar visibility is controlled separately)
-      formattingExtensions.push(
-        Heading.configure({
-          levels: [1, 2, 3, 4, 5, 6],
-        })
-      );
+      // Add heading extension for full variant (CMS rich-text)
+      if (isFullVariant) {
+        formattingExtensions.push(
+          Heading.configure({
+            levels: [1, 2, 3, 4, 5, 6],
+          })
+        );
+      }
 
       // Add link extension unless explicitly disabled
       if (!disableLinks) {
@@ -396,7 +393,7 @@ const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(({
     }
 
     return baseExtensions;
-  }, [placeholder, withFormatting, disableLinks]);
+  }, [placeholder, withFormatting, disableLinks, isFullVariant]);
 
   const editor = useEditor({
     immediatelyRender: true,
@@ -956,7 +953,7 @@ const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(({
             </ToggleGroup>
           )}
 
-          {/* Insert Image / Component */}
+          {/* Insert Component Button */}
           <ToggleGroup
             type="single"
             value=""
@@ -964,33 +961,6 @@ const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(({
             variant="secondary"
             spacing={1}
           >
-            <ToggleGroupItem
-              value="image"
-              asChild
-            >
-              <button
-                type="button"
-                title="Insert Image"
-                disabled={disabled}
-                className="w-auto min-w-0 shrink-0"
-                onClick={() => {
-                  openFileManager(
-                    (asset: Asset) => {
-                      if (!editor || !asset.public_url) return;
-                      editor.chain().focus().setRichTextImage({
-                        src: asset.public_url,
-                        alt: asset.filename,
-                        assetId: asset.id,
-                      }).run();
-                    },
-                    undefined,
-                    'images'
-                  );
-                }}
-              >
-                <Icon name="image" className="size-3" />
-              </button>
-            </ToggleGroupItem>
             <ToggleGroupItem
               value="component"
               asChild
@@ -1255,32 +1225,8 @@ const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(({
             </>
           )}
 
-          {/* Insert Image / Component */}
+          {/* Insert Component Button */}
           <div className="w-px h-4 bg-border mx-0.5" />
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="size-6!"
-            title="Insert Image"
-            disabled={disabled}
-            onClick={() => {
-              openFileManager(
-                (asset: Asset) => {
-                  if (!editor || !asset.public_url) return;
-                  editor.chain().focus().setRichTextImage({
-                    src: asset.public_url,
-                    alt: asset.filename,
-                    assetId: asset.id,
-                  }).run();
-                },
-                undefined,
-                'images'
-              );
-            }}
-          >
-            <Icon name="image" className="size-3" />
-          </Button>
           <Button
             type="button"
             variant="ghost"

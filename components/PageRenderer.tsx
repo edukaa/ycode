@@ -1,11 +1,9 @@
 import AnimationInitializer from '@/components/AnimationInitializer';
 import ContentHeightReporter from '@/components/ContentHeightReporter';
-import CustomCodeInjector from '@/components/CustomCodeInjector';
 import LayerRenderer from '@/components/LayerRenderer';
 import SliderInitializer from '@/components/SliderInitializer';
 import LightboxInitializer from '@/components/LightboxInitializer';
 import PasswordForm from '@/components/PasswordForm';
-import { renderHeadCode } from '@/lib/parse-head-html';
 import { resolveCustomCodePlaceholders } from '@/lib/resolve-cms-variables';
 import { generateInitialAnimationCSS, type HiddenLayerInfo } from '@/lib/animation-utils';
 import { buildCustomFontsCss, buildFontClassesCss, getGoogleFontLinks } from '@/lib/font-utils';
@@ -48,18 +46,16 @@ interface PageRendererProps {
   layers: Layer[];
   components: Component[];
   generatedCss?: string;
-  colorVariablesCss?: string;
   collectionItem?: CollectionItemWithValues;
   collectionFields?: CollectionField[];
   locale?: Locale | null;
   availableLocales?: Locale[];
-  isPreview?: boolean;
-  translations?: Record<string, any> | null;
-  gaMeasurementId?: string | null;
-  globalCustomCodeHead?: string | null;
-  globalCustomCodeBody?: string | null;
-  ycodeBadge?: boolean;
-  passwordProtection?: PasswordProtectionContext;
+  isPreview?: boolean; // Whether we're in preview mode (use draft data)
+  translations?: Record<string, any> | null; // Translations for localized URL generation
+  gaMeasurementId?: string | null; // Google Analytics Measurement ID (pre-fetched)
+  globalCustomCodeBody?: string | null; // Global custom code for </body> (pre-fetched)
+  ycodeBadge?: boolean; // Whether to show the "Made in Ycode" badge
+  passwordProtection?: PasswordProtectionContext; // For 401 error pages - inject password form
 }
 
 /**
@@ -88,7 +84,6 @@ export default async function PageRenderer({
   layers,
   components,
   generatedCss,
-  colorVariablesCss,
   collectionItem,
   collectionFields = [],
   locale,
@@ -96,7 +91,6 @@ export default async function PageRenderer({
   isPreview = false,
   translations,
   gaMeasurementId,
-  globalCustomCodeHead,
   globalCustomCodeBody,
   ycodeBadge = true,
   passwordProtection,
@@ -198,12 +192,7 @@ export default async function PageRenderer({
   }
 
   // Extract custom code from page settings and resolve placeholders for dynamic pages
-  const rawPageCustomCodeHead = page.settings?.custom_code?.head || '';
   const rawPageCustomCodeBody = page.settings?.custom_code?.body || '';
-
-  const pageCustomCodeHead = page.is_dynamic && collectionItem
-    ? resolveCustomCodePlaceholders(rawPageCustomCodeHead, collectionItem, collectionFields)
-    : rawPageCustomCodeHead;
 
   const pageCustomCodeBody = page.is_dynamic && collectionItem
     ? resolveCustomCodePlaceholders(rawPageCustomCodeBody, collectionItem, collectionFields)
@@ -265,13 +254,7 @@ export default async function PageRenderer({
 
   return (
     <>
-      {/* Inject global custom head code — rendered via next/script + React 19 hoisting */}
-      {globalCustomCodeHead && renderHeadCode(globalCustomCodeHead, 'global-head')}
-
-      {/* Inject page-specific custom head code */}
-      {pageCustomCodeHead && renderHeadCode(pageCustomCodeHead, 'page-head')}
-
-      {/* Inject CSS directly — React 19 hoists <style> with precedence to <head> */}
+      {/* Inject CSS directly - Next.js hoists this to <head> during SSR */}
       {generatedCss && (
         <style
           id="ycode-styles"
@@ -279,15 +262,7 @@ export default async function PageRenderer({
         />
       )}
 
-      {/* Inject color variable CSS custom properties */}
-      {colorVariablesCss && (
-        <style
-          id="ycode-color-vars"
-          dangerouslySetInnerHTML={{ __html: colorVariablesCss }}
-        />
-      )}
-
-      {/* Load Google Fonts via <link> elements */}
+      {/* Load Google Fonts via <link> elements (more reliable than @import) */}
       {googleFontLinkUrls.map((url, i) => (
         <link
           key={`gfont-${i}`}
@@ -333,7 +308,7 @@ export default async function PageRenderer({
         </>
       )}
 
-      {/* Apply body layer classes synchronously before paint */}
+      {/* Apply body layer classes to <body> synchronously before paint */}
       <script
         dangerouslySetInnerHTML={{
           __html: (() => {
@@ -393,12 +368,12 @@ export default async function PageRenderer({
 
       {/* Inject global custom body code (applies to all pages) */}
       {globalCustomCodeBody && (
-        <CustomCodeInjector html={globalCustomCodeBody} />
+        <div dangerouslySetInnerHTML={{ __html: globalCustomCodeBody }} />
       )}
 
       {/* Inject page-specific custom body code */}
       {pageCustomCodeBody && (
-        <CustomCodeInjector html={pageCustomCodeBody} />
+        <div dangerouslySetInnerHTML={{ __html: pageCustomCodeBody }} />
       )}
 
       {/* Ycode badge (only on published pages, not in preview) */}

@@ -32,33 +32,31 @@ export default function SettingsPanel({
 }: SettingsPanelProps) {
   return (
     <div className={cn('pt-5', className)}>
-      {title && (
-        <header
-          className={cn(
-            'w-full py-5 -mt-5 flex items-center justify-between',
-            collapsible && 'cursor-pointer'
+      <header
+        className={cn(
+          'w-full py-5 -mt-5 flex items-center justify-between',
+          collapsible && 'cursor-pointer'
+        )}
+        onClick={collapsible ? onToggle : undefined}
+      >
+        <div className="flex items-center gap-2">
+          {collapsible && (
+            <Icon
+              name="triangle-right"
+              className={cn('size-3 opacity-30 transition-transform', isOpen && 'rotate-90')}
+            />
           )}
-          onClick={collapsible ? onToggle : undefined}
+          <Label className={collapsible ? 'cursor-pointer' : undefined}>{title}</Label>
+        </div>
+        <div
+          className="flex items-center gap-2 -my-2"
+          onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center gap-2">
-            {collapsible && (
-              <Icon
-                name="triangle-right"
-                className={cn('size-3 opacity-30 transition-transform', isOpen && 'rotate-90')}
-              />
-            )}
-            <Label className={collapsible ? 'cursor-pointer' : undefined}>{title}</Label>
-          </div>
-          <div
-            className="flex items-center gap-2 -my-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {action}
-          </div>
-        </header>
-      )}
+          {action}
+        </div>
+      </header>
 
-      {isOpen && children && (
+      {isOpen && (
         <div className="flex flex-col gap-2 pb-5">
           {children}
         </div>

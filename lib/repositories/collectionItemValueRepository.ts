@@ -108,32 +108,27 @@ export async function getValuesByItemIds(
     return {};
   }
 
-  // Batch into chunks to avoid exceeding PostgREST URL length limits
-  const CHUNK_SIZE = 200;
+  const { data, error } = await client
+    .from('collection_item_values')
+    .select('item_id, field_id, value, collection_fields!inner(type)')
+    .in('item_id', item_ids)
+    .eq('is_published', is_published)
+    .is('deleted_at', null);
+
+  if (error) {
+    throw new Error(`Failed to fetch item values: ${error.message}`);
+  }
+
+  // Transform to { item_id: { field_id: value } } structure, casting by type
   const valuesByItem: Record<string, Record<string, any>> = {};
 
-  for (let i = 0; i < item_ids.length; i += CHUNK_SIZE) {
-    const chunk = item_ids.slice(i, i + CHUNK_SIZE);
-
-    const { data, error } = await client
-      .from('collection_item_values')
-      .select('item_id, field_id, value, collection_fields!inner(type)')
-      .in('item_id', chunk)
-      .eq('is_published', is_published)
-      .is('deleted_at', null);
-
-    if (error) {
-      throw new Error(`Failed to fetch item values: ${error.message}`);
+  data?.forEach((row: any) => {
+    if (!valuesByItem[row.item_id]) {
+      valuesByItem[row.item_id] = {};
     }
-
-    data?.forEach((row: any) => {
-      if (!valuesByItem[row.item_id]) {
-        valuesByItem[row.item_id] = {};
-      }
-      const fieldType = row.collection_fields?.type;
-      valuesByItem[row.item_id][row.field_id] = castValue(row.value, fieldType || 'text');
-    });
-  }
+    const fieldType = row.collection_fields?.type;
+    valuesByItem[row.item_id][row.field_id] = castValue(row.value, fieldType || 'text');
+  });
 
   return valuesByItem;
 }

@@ -25,10 +25,10 @@ import Underline from '@tiptap/extension-underline';
 import Strike from '@tiptap/extension-strike';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
+import BulletList from '@tiptap/extension-bullet-list';
+import OrderedList from '@tiptap/extension-ordered-list';
+import ListItem from '@tiptap/extension-list-item';
 import Heading from '@tiptap/extension-heading';
-import Blockquote from '@tiptap/extension-blockquote';
-import Code from '@tiptap/extension-code';
-import { RichTextImage } from '@/lib/tiptap-extensions/rich-text-image';
 import { getTextStyleClasses } from '@/lib/text-format-utils';
 import type { Layer, TextStyle, CollectionField, Collection } from '@/types';
 import type { FieldVariable } from '@/types';
@@ -133,98 +133,145 @@ const DynamicVariableWithNodeView = DynamicVariable.extend({
 });
 
 /**
- * All block/mark extensions use a ref so renderHTML always reads the latest textStyles.
- * This avoids stale closures when textStyles change while the Tiptap editor is mounted.
+ * Create custom Bold extension with layer textStyles class
  */
-type TextStylesRef = React.MutableRefObject<Record<string, TextStyle> | undefined>;
-
-function createBoldExtension(ref: TextStylesRef) {
+function createBoldExtension(textStyles?: Record<string, TextStyle>) {
   return Bold.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['strong', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'bold') }), 0];
+      return ['strong', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'bold') }), 0];
     },
   });
 }
 
-function createItalicExtension(ref: TextStylesRef) {
+/**
+ * Create custom Italic extension with layer textStyles class
+ */
+function createItalicExtension(textStyles?: Record<string, TextStyle>) {
   return Italic.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['em', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'italic') }), 0];
+      return ['em', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'italic') }), 0];
     },
   });
 }
 
-function createUnderlineExtension(ref: TextStylesRef) {
+/**
+ * Create custom Underline extension with layer textStyles class
+ */
+function createUnderlineExtension(textStyles?: Record<string, TextStyle>) {
   return Underline.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['u', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'underline') }), 0];
+      return ['u', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'underline') }), 0];
     },
   });
 }
 
-function createStrikeExtension(ref: TextStylesRef) {
+/**
+ * Create custom Strike extension with layer textStyles class
+ */
+function createStrikeExtension(textStyles?: Record<string, TextStyle>) {
   return Strike.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['s', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'strike') }), 0];
+      return ['s', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'strike') }), 0];
     },
   });
 }
 
-function createSubscriptExtension(ref: TextStylesRef) {
+/**
+ * Create custom Subscript extension with layer textStyles class
+ */
+function createSubscriptExtension(textStyles?: Record<string, TextStyle>) {
   return Subscript.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['sub', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'subscript') }), 0];
+      return ['sub', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'subscript') }), 0];
     },
   });
 }
 
-function createSuperscriptExtension(ref: TextStylesRef) {
+/**
+ * Create custom Superscript extension with layer textStyles class
+ */
+function createSuperscriptExtension(textStyles?: Record<string, TextStyle>) {
   return Superscript.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['sup', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'superscript') }), 0];
+      return ['sup', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'superscript') }), 0];
     },
   });
 }
 
-function createBlockquoteExtension(ref: TextStylesRef) {
-  return Blockquote.extend({
+/**
+ * Create custom BulletList extension with layer textStyles class
+ */
+function createBulletListExtension(textStyles?: Record<string, TextStyle>) {
+  return BulletList.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['blockquote', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'blockquote') }), 0];
+      return ['ul', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'bulletList') }), 0];
     },
   });
 }
 
-function createParagraphExtension(ref: TextStylesRef) {
+/**
+ * Create custom OrderedList extension with layer textStyles class
+ */
+function createOrderedListExtension(textStyles?: Record<string, TextStyle>) {
+  return OrderedList.extend({
+    renderHTML({ HTMLAttributes }) {
+      return ['ol', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'orderedList') }), 0];
+    },
+  });
+}
+
+/**
+ * Create custom ListItem extension with layer textStyles class
+ */
+function createListItemExtension(textStyles?: Record<string, TextStyle>) {
+  return ListItem.extend({
+    renderHTML({ HTMLAttributes }) {
+      return ['li', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'listItem') }), 0];
+    },
+  });
+}
+
+/**
+ * Create custom Paragraph extension with layer textStyles class
+ */
+function createParagraphExtension(textStyles?: Record<string, TextStyle>) {
   return Paragraph.extend({
     renderHTML({ HTMLAttributes }) {
-      return ['p', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'paragraph') }), 0];
+      return ['p', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, 'paragraph') }), 0];
     },
   });
 }
 
-function createHeadingExtension(ref: TextStylesRef) {
+/**
+ * Create custom Heading extension with layer textStyles classes for each level
+ */
+function createHeadingExtension(textStyles?: Record<string, TextStyle>) {
   return Heading.extend({
     renderHTML({ node, HTMLAttributes }) {
       const level = node.attrs.level as 1 | 2 | 3 | 4 | 5 | 6;
       const styleKey = `h${level}` as const;
 
-      return [`h${level}`, mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, styleKey) }), 0];
+      return [`h${level}`, mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(textStyles, styleKey) }), 0];
     },
   }).configure({
     levels: [1, 2, 3, 4, 5, 6],
   });
 }
 
-function createRichTextLinkExtension(ref: TextStylesRef) {
+/**
+ * Create custom RichTextLink extension with layer textStyles class
+ */
+function createRichTextLinkExtension(textStyles?: Record<string, TextStyle>) {
+  const linkClass = getTextStyleClasses(textStyles, 'link');
+
   return RichTextLink.extend({
     addOptions() {
       return {
         ...this.parent?.(),
-        HTMLAttributes: {},
+        HTMLAttributes: {
+          class: linkClass,
+        },
       };
-    },
-    renderHTML({ HTMLAttributes }) {
-      return ['a', mergeAttributes(HTMLAttributes, { class: getTextStyleClasses(ref.current, 'link') }), 0];
     },
   });
 }
@@ -339,25 +386,26 @@ const CanvasTextEditor = forwardRef<CanvasTextEditorHandle, CanvasTextEditorProp
   // Track current layer ID to detect layer switches
   const currentLayerIdRef = useRef<string>(layer.id);
 
-  // All extensions use textStylesRef so renderHTML always reads the latest styles
+  // Create extensions with layer-specific textStyles
+  // Dynamic styles use textStylesRef for real-time class lookups
   const extensions = useMemo(() => [
     Document,
-    createParagraphExtension(textStylesRef),
+    createParagraphExtension(textStylesRef.current),
     Text,
     History,
     DynamicVariableWithNodeView,
     RichTextComponent,
-    createRichTextLinkExtension(textStylesRef),
-    createBoldExtension(textStylesRef),
-    createItalicExtension(textStylesRef),
-    createUnderlineExtension(textStylesRef),
-    createStrikeExtension(textStylesRef),
-    createSubscriptExtension(textStylesRef),
-    createSuperscriptExtension(textStylesRef),
-    createHeadingExtension(textStylesRef),
-    createBlockquoteExtension(textStylesRef),
-    Code,
-    RichTextImage,
+    createRichTextLinkExtension(textStylesRef.current),
+    createBoldExtension(textStylesRef.current),
+    createItalicExtension(textStylesRef.current),
+    createUnderlineExtension(textStylesRef.current),
+    createStrikeExtension(textStylesRef.current),
+    createSubscriptExtension(textStylesRef.current),
+    createSuperscriptExtension(textStylesRef.current),
+    createBulletListExtension(textStylesRef.current),
+    createOrderedListExtension(textStylesRef.current),
+    createListItemExtension(textStylesRef.current),
+    createHeadingExtension(textStylesRef.current),
     createDynamicStyleExtension(textStylesRef),
   ], []);
 
@@ -372,11 +420,6 @@ const CanvasTextEditor = forwardRef<CanvasTextEditorHandle, CanvasTextEditorProp
 
   // Create a ref to handle saving on unmount/finish
   const saveChangesRef = useRef<() => void>(() => {});
-  // Track whether the user has actually interacted with the editor
-  // Prevents Strict Mode double-mount or extension-stripping from persisting unwanted changes
-  const hasUserEditedRef = useRef(false);
-  // Tracks whether the editor has finished initialization (onCreate fired)
-  const editorReadyRef = useRef(false);
 
   const editor = useEditor({
     immediatelyRender: true,
@@ -406,14 +449,9 @@ const CanvasTextEditor = forwardRef<CanvasTextEditorHandle, CanvasTextEditorProp
         savedSelectionRef.current = { from, to };
       }
     },
-    onTransaction: ({ transaction, editor: editorInstance }) => {
+    onTransaction: ({ editor: editorInstance }) => {
       // Update active marks after any transaction
       updateActiveMarks();
-
-      // Track user-initiated content changes (after editor is ready)
-      if (transaction.docChanged && editorReadyRef.current) {
-        hasUserEditedRef.current = true;
-      }
 
       // Save cursor position after transaction (if editor is focused)
       if (editorInstance && editorInstance.isFocused) {
@@ -428,8 +466,6 @@ const CanvasTextEditor = forwardRef<CanvasTextEditorHandle, CanvasTextEditorProp
         doc: state.doc,
         plugins: state.plugins,
       }));
-      // Mark editor as ready — any subsequent docChanged transactions are user edits
-      editorReadyRef.current = true;
     },
     onBlur: ({ editor: editorInstance }) => {
       // Save cursor position when editor loses focus
@@ -519,28 +555,10 @@ const CanvasTextEditor = forwardRef<CanvasTextEditorHandle, CanvasTextEditorProp
     };
   }, [editor, applyDynamicStyles]);
 
-  // Sync block/mark classes when textStyles change (extensions use refs,
-  // but ProseMirror won't call renderHTML again for unchanged content)
+  // Reapply styles when textStyles change
   useEffect(() => {
-    if (!editor?.view?.dom) return;
-    const root = editor.view.dom;
-    const styles = textStylesRef.current;
-
-    const TAG_TO_STYLE_KEY: Record<string, string> = {
-      P: 'paragraph', H1: 'h1', H2: 'h2', H3: 'h3', H4: 'h4', H5: 'h5', H6: 'h6',
-      BLOCKQUOTE: 'blockquote',
-      STRONG: 'bold', EM: 'italic', U: 'underline', S: 'strike', SUB: 'subscript', SUP: 'superscript',
-      A: 'link',
-    };
-
-    for (const [tag, key] of Object.entries(TAG_TO_STYLE_KEY)) {
-      const els = root.querySelectorAll(tag.toLowerCase());
-      const cls = getTextStyleClasses(styles, key);
-      els.forEach(el => { (el as HTMLElement).className = cls; });
-    }
-
     applyDynamicStyles();
-  }, [textStyles, editor, applyDynamicStyles]);
+  }, [textStyles, applyDynamicStyles]);
 
   // Register editor with store on mount
   useEffect(() => {
@@ -565,19 +583,17 @@ const CanvasTextEditor = forwardRef<CanvasTextEditorHandle, CanvasTextEditorProp
       // Cleanup: save changes and unregister
       saveChangesRef.current();
       stopEditing();
-      // Reset tracking flags for Strict Mode re-mount
-      hasUserEditedRef.current = false;
-      editorReadyRef.current = false;
     };
   }, [editor, setEditor, startEditing, stopEditing, setOnFinishCallback, setOnSaveCallback, layer.id]);
 
   // Update save function when editor or onChange changes
   useEffect(() => {
     saveChangesRef.current = () => {
-      if (editor && hasUserEditedRef.current) {
+      if (editor) {
         const currentValue = editor.getJSON();
         if (JSON.stringify(currentValue) !== JSON.stringify(valueRef.current)) {
           onChange(currentValue);
+          // Update valueRef to prevent duplicate saves
           valueRef.current = currentValue;
         }
       }
@@ -590,16 +606,14 @@ const CanvasTextEditor = forwardRef<CanvasTextEditorHandle, CanvasTextEditorProp
 
     if (currentLayerIdRef.current !== layer.id) {
       // Layer has changed - save the current editor content before switching
-      if (currentLayerIdRef.current && hasUserEditedRef.current) {
+      if (currentLayerIdRef.current) {
         const currentContent = editor.getJSON();
         if (JSON.stringify(currentContent) !== JSON.stringify(valueRef.current)) {
           onChange(currentContent);
         }
       }
-      // Update to new layer ID and reset edit tracking for the new layer
+      // Update to new layer ID
       currentLayerIdRef.current = layer.id;
-      hasUserEditedRef.current = false;
-      editorReadyRef.current = false;
     }
   }, [layer.id, editor, onChange]);
 

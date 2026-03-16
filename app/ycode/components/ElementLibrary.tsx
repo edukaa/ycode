@@ -154,7 +154,7 @@ interface ElementLibraryProps {
 // Category definitions
 const elementCategories: Record<string, string[]> = {
   Structure: ['section', 'container', 'div', 'hr', 'columns', 'rows', 'grid', 'collection'],
-  Content: ['heading', 'text', 'richText'],
+  Content: ['heading', 'text'],
   Actions: ['button'],
   Media: ['image', 'icon', 'video', 'audio'],
   Form: ['form', 'input', 'textarea', 'select', 'checkbox', 'radio', 'label', 'filter'],
