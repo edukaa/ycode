@@ -121,6 +121,8 @@ interface LayerRendererProps {
   ancestorComponentIds?: Set<string>;
   /** Whether these layers are direct children of a slides wrapper (adds swiper-slide class) */
   isSlideChild?: boolean;
+  /** Server-side settings (for preview/published pages where Zustand store is not available) */
+  serverSettings?: Record<string, unknown>;
 }
 
 const LayerRenderer: React.FC<LayerRendererProps> = ({
@@ -165,6 +167,7 @@ const LayerRenderer: React.FC<LayerRendererProps> = ({
   components: componentsProp,
   ancestorComponentIds,
   isSlideChild: isSlideChildProp,
+  serverSettings,
 }) => {
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string>('');
@@ -303,6 +306,7 @@ const LayerRenderer: React.FC<LayerRendererProps> = ({
         components={componentsProp}
         ancestorComponentIds={ancestorComponentIds}
         isSlideChild={isSlideChildProp}
+        serverSettings={serverSettings}
       />
     );
   };
@@ -363,6 +367,7 @@ const LayerItem: React.FC<{
   components?: Component[];
   ancestorComponentIds?: Set<string>;
   isSlideChild?: boolean;
+  serverSettings?: Record<string, unknown>;
 }> = ({
   layer,
   isEditMode,
@@ -411,6 +416,7 @@ const LayerItem: React.FC<{
   components: componentsProp,
   ancestorComponentIds,
   isSlideChild,
+  serverSettings,
 }) => {
   // Subscribe to selection state from the store for reactive updates without
   // forcing the entire LayerRenderer tree to re-render when selection changes
@@ -500,10 +506,11 @@ const LayerItem: React.FC<{
     anchorMap,
     resolvedAssets,
     components: componentsProp,
+    serverSettings,
   // selectedLayerId and hoveredLayerId kept in the object for SSR/published mode
   // but excluded from deps so changes don't cascade re-renders in edit mode.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [isEditMode, isPublished, onLayerClick, onLayerUpdate, onLayerHover, pageId, collectionLayerData, collectionLayerItemId, effectiveLayerDataMap, pageCollectionItemId, pageCollectionItemData, hiddenLayerInfo, editorHiddenLayerIds, editorBreakpoint, currentLocale, availableLocales, localeSelectorFormat, liveLayerUpdates, liveComponentUpdates, isInsideForm, parentFormSettings, pages, folders, collectionItemSlugs, isPreview, translations, anchorMap, resolvedAssets, componentsProp]);
+  }), [isEditMode, isPublished, onLayerClick, onLayerUpdate, onLayerHover, pageId, collectionLayerData, collectionLayerItemId, effectiveLayerDataMap, pageCollectionItemId, pageCollectionItemData, hiddenLayerInfo, editorHiddenLayerIds, editorBreakpoint, currentLocale, availableLocales, localeSelectorFormat, liveLayerUpdates, liveComponentUpdates, isInsideForm, parentFormSettings, pages, folders, collectionItemSlugs, isPreview, translations, anchorMap, resolvedAssets, componentsProp, serverSettings]);
 
   // Callback for rendering embedded components inside rich-text content
   // Clicks on the embedded component's internal layers should select the text layer
@@ -2256,7 +2263,7 @@ const LayerItem: React.FC<{
 
     // Handle Map layers - Mapbox GL JS iframe
     if (layer.name === 'map') {
-      const mapToken = settingsByKey.mapbox_access_token as string | undefined;
+      const mapToken = (settingsByKey.mapbox_access_token || serverSettings?.mapbox_access_token) as string | undefined;
       const mapSettings = layer.settings?.map || DEFAULT_MAP_SETTINGS;
 
       if (!mapToken) {
@@ -2546,6 +2553,7 @@ const LayerItem: React.FC<{
               components={componentsProp}
               ancestorComponentIds={effectiveAncestorIds}
               isSlideChild={layer.name === 'slides'}
+              serverSettings={serverSettings}
             />
           )}
         </Tag>
@@ -2752,6 +2760,7 @@ const LayerItem: React.FC<{
                     components={componentsProp}
                     ancestorComponentIds={effectiveAncestorIds}
                     isSlideChild={layer.name === 'slides'}
+                    serverSettings={serverSettings}
                   />
                 )}
               </Tag>
@@ -2817,6 +2826,7 @@ const LayerItem: React.FC<{
               parentFormSettings={htmlTag === 'form' ? layer.settings?.form : parentFormSettings}
               components={componentsProp}
               ancestorComponentIds={effectiveAncestorIds}
+              serverSettings={serverSettings}
             />
           )}
 
@@ -2888,6 +2898,7 @@ const LayerItem: React.FC<{
             components={componentsProp}
             ancestorComponentIds={effectiveAncestorIds}
             isSlideChild={layer.name === 'slides'}
+            serverSettings={serverSettings}
           />
         )}
       </Tag>

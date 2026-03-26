@@ -45,7 +45,9 @@ export async function GET(request: NextRequest) {
       center: feature.center,
     }));
 
-    return NextResponse.json({ data: results });
+    return NextResponse.json({ data: results }, {
+      headers: { 'Cache-Control': 'public, max-age=432000, s-maxage=432000' },
+    });
   } catch (error) {
     console.error('Geocoding error:', error);
     return NextResponse.json(

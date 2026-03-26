@@ -10,8 +10,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverTrigger, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -50,9 +54,10 @@ export default function MapSettings({ layer, onLayerUpdate }: MapSettingsProps) 
   const [lngInput, setLngInput] = useState(String(mapSettings.longitude));
   const [zoomInput, setZoomInput] = useState(String(mapSettings.zoom));
 
-  const [addressQuery, setAddressQuery] = useState('');
+  const [addressQuery, setAddressQuery] = useState(mapSettings.search || '');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isAddressFocused, setIsAddressFocused] = useState(false);
   const debouncedQuery = useDebounce(addressQuery, 400);
   const searchAbortRef = useRef<AbortController | null>(null);
 
@@ -61,7 +66,9 @@ export default function MapSettings({ layer, onLayerUpdate }: MapSettingsProps) 
     setLatInput(String(mapSettings.latitude));
     setLngInput(String(mapSettings.longitude));
     setZoomInput(String(mapSettings.zoom));
-  }, [layer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    setAddressQuery(mapSettings.search || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layer?.id]);
 
   const updateMapSettings = useCallback(
     (updates: Partial<MapSettingsType>) => {
@@ -157,9 +164,9 @@ export default function MapSettings({ layer, onLayerUpdate }: MapSettingsProps) 
       const [lng, lat] = result.center;
       setLatInput(String(lat));
       setLngInput(String(lng));
-      setAddressQuery('');
+      setAddressQuery(result.place_name);
       setSearchResults([]);
-      updateMapSettings({ latitude: lat, longitude: lng });
+      updateMapSettings({ latitude: lat, longitude: lng, search: result.place_name });
     },
     [updateMapSettings]
   );
@@ -173,52 +180,68 @@ export default function MapSettings({ layer, onLayerUpdate }: MapSettingsProps) 
       title="Map"
       isOpen={isOpen}
       onToggle={() => setIsOpen(!isOpen)}
+      action={
+        <Button
+          asChild
+          size="xs"
+          variant={hasToken ? 'secondary' : 'destructive'}
+        >
+          <Link href="/ycode/integrations/apps?app=mapbox">
+            Config
+          </Link>
+        </Button>
+      }
     >
       <div className="flex flex-col gap-3">
-        {!hasToken && (
-          <Link
-            href="/ycode/integrations/apps?app=mapbox"
-            className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive block"
-          >
-            Mapbox token not configured.
-          </Link>
-        )}
-
         {/* Address search */}
-        <div className="grid grid-cols-3 items-start">
-          <Label variant="muted" className="pt-2">Address</Label>
-          <div className="col-span-2 flex flex-col gap-1">
-            <div className="relative">
-              <Input
-                value={addressQuery}
-                onChange={(e) => setAddressQuery(e.target.value)}
-                placeholder="Search for an address..."
-              />
+        <Popover open={isAddressFocused && searchResults.length > 0}>
+          <div className="grid grid-cols-3 items-start">
+            <Label variant="muted" className="pt-2">Address</Label>
+            <div className="col-span-2 relative">
+              <PopoverAnchor asChild>
+                <Input
+                  value={addressQuery}
+                  onChange={(e) => setAddressQuery(e.target.value)}
+                  onFocus={() => setIsAddressFocused(true)}
+                  onBlur={() => setTimeout(() => setIsAddressFocused(false), 150)}
+                  placeholder="Search for an address..."
+                />
+              </PopoverAnchor>
               {isSearching && (
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                   ...
                 </div>
               )}
             </div>
-            {searchResults.length > 0 && (
-              <div className="border rounded-md bg-popover max-h-40 overflow-y-auto">
-                {searchResults.map((result, i) => (
-                  <button
-                    key={i}
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent truncate"
-                    onClick={() => handleSelectResult(result)}
-                  >
-                    {result.place_name}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
+          <PopoverContent
+            align="end"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            className="w-auto max-w-none max-h-48 overflow-y-auto p-1 border-transparent"
+          >
+            {searchResults.map((result, i) => (
+              <button
+                key={i}
+                className="flex w-full cursor-pointer items-center rounded-sm py-1.5 px-2 text-xs text-muted-foreground outline-hidden hover:bg-accent hover:text-accent-foreground truncate"
+                onClick={() => handleSelectResult(result)}
+              >
+                {result.place_name}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
 
         {/* Coordinates */}
         <div className="grid grid-cols-3 items-center">
-          <Label variant="muted">Lat. / Long.</Label>
+          <div className="flex items-center gap-1.5">
+            <Label variant="muted">Coord.</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Icon name="info" className="size-3 opacity-70" />
+              </TooltipTrigger>
+              <TooltipContent>Latitude / Longitude</TooltipContent>
+            </Tooltip>
+          </div>
           <div className="col-span-2 grid grid-cols-2 gap-2">
             <Input
               value={latInput}
@@ -287,8 +310,8 @@ export default function MapSettings({ layer, onLayerUpdate }: MapSettingsProps) 
         </div>
 
         {/* Behavior */}
-        <div className="grid grid-cols-3 gap-2">
-          <Label variant="muted">Behavior</Label>
+        <div className="grid grid-cols-3 items-start gap-2">
+          <Label variant="muted" className="pt-0.5">Behavior</Label>
           <div className="col-span-2 flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <Checkbox
@@ -320,6 +343,55 @@ export default function MapSettings({ layer, onLayerUpdate }: MapSettingsProps) 
                 className="cursor-pointer"
               >
                 Interactive
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="map-scroll-zoom"
+                checked={mapSettings.scrollZoom}
+                disabled={!mapSettings.interactive}
+                onCheckedChange={(checked: boolean) =>
+                  updateMapSettings({ scrollZoom: checked })
+                }
+              />
+              <Label
+                variant="muted"
+                htmlFor="map-scroll-zoom"
+                className="cursor-pointer"
+              >
+                Zoom with scroll
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="map-nav-control"
+                checked={mapSettings.showNavControl}
+                onCheckedChange={(checked: boolean) =>
+                  updateMapSettings({ showNavControl: checked })
+                }
+              />
+              <Label
+                variant="muted"
+                htmlFor="map-nav-control"
+                className="cursor-pointer"
+              >
+                Navigation control
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="map-scale-bar"
+                checked={mapSettings.showScaleBar}
+                onCheckedChange={(checked: boolean) =>
+                  updateMapSettings({ showScaleBar: checked })
+                }
+              />
+              <Label
+                variant="muted"
+                htmlFor="map-scale-bar"
+                className="cursor-pointer"
+              >
+                Scale bar
               </Label>
             </div>
           </div>

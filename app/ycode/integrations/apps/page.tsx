@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 
 import type { AppCategory } from '@/lib/apps/registry';
 import { APP_CATEGORIES } from '@/lib/apps/registry';
+import { useSettingsStore } from '@/stores/useSettingsStore';
 import { MAILERLITE_SUBSCRIBER_FIELDS } from '@/lib/apps/mailerlite/types';
 import type { MailerLiteConnection, MailerLiteFieldMapping } from '@/lib/apps/mailerlite/types';
 
@@ -106,7 +107,7 @@ function AppCard({ app, onOpenSettings }: AppCardProps) {
         <div className="flex items-center gap-2 mb-0.5">
           <span className="font-medium text-sm">{app.name}</span>
           {app.connected && (
-            <Badge variant="default" className="text-[10px]">
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               Connected
             </Badge>
           )}
@@ -131,6 +132,7 @@ function AppCard({ app, onOpenSettings }: AppCardProps) {
 export default function AppsPage() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const updateSetting = useSettingsStore((s) => s.updateSetting);
 
   // App list state
   const [apps, setApps] = useState<AppWithStatus[]>([]);
@@ -386,7 +388,7 @@ export default function AppsPage() {
         setSavedMapboxToken(mapboxToken.trim());
         setIsMapboxConnected(true);
         updateAppStatus('mapbox', true);
-        toast.success('Mapbox token saved');
+        updateSetting('mapbox_access_token', mapboxToken.trim());
       } else {
         toast.error('Failed to save token');
       }
@@ -405,7 +407,7 @@ export default function AppsPage() {
       setIsMapboxConnected(false);
       setShowMapboxDisconnect(false);
       updateAppStatus('mapbox', false);
-      toast.success('Mapbox disconnected');
+      updateSetting('mapbox_access_token', null);
     } catch {
       toast.error('Failed to disconnect');
     }

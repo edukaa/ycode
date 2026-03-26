@@ -237,6 +237,10 @@ export interface MapSettings {
   style: MapStyle;
   showMarker: boolean;
   interactive: boolean;
+  scrollZoom: boolean;
+  showNavControl: boolean;
+  showScaleBar: boolean;
+  search?: string;
 }
 
 // Layer Style Types

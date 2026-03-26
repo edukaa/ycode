@@ -27,12 +27,16 @@ export const MAP_STYLE_OPTIONS: { value: MapStyle; label: string }[] = [
 ];
 
 export const DEFAULT_MAP_SETTINGS: MapSettings = {
-  latitude: 40.7128,
-  longitude: -74.0060,
-  zoom: 13,
+  latitude: 40.712749,
+  longitude: -74.005994,
+  zoom: 12,
   style: 'streets',
   showMarker: true,
   interactive: true,
+  scrollZoom: true,
+  showNavControl: false,
+  showScaleBar: false,
+  search: 'New York',
 };
 
 /** Resolve a map style shorthand to a Mapbox style URL */
@@ -49,17 +53,28 @@ export function buildMapEmbedHtml(
   accessToken: string
 ): string {
   const styleUrl = getMapboxStyleUrl(settings.style);
-  const { latitude, longitude, zoom, showMarker, interactive } = settings;
+  const {
+    latitude, longitude, zoom, showMarker, interactive,
+    scrollZoom, showNavControl, showScaleBar,
+  } = settings;
 
-  const interactiveHandlers = interactive
-    ? ''
-    : `
-      map.dragPan.disable();
-      map.scrollZoom.disable();
-      map.boxZoom.disable();
-      map.doubleClickZoom.disable();
-      map.touchZoomRotate.disable();
-      map.keyboard.disable();`;
+  const disableHandlers: string[] = [];
+  if (!interactive) {
+    disableHandlers.push(
+      'map.dragPan.disable();',
+      'map.boxZoom.disable();',
+      'map.doubleClickZoom.disable();',
+      'map.touchZoomRotate.disable();',
+      'map.keyboard.disable();',
+    );
+  }
+  if (!interactive || !scrollZoom) {
+    disableHandlers.push('map.scrollZoom.disable();');
+  }
+
+  const controls: string[] = [];
+  if (showNavControl) controls.push('map.addControl(new mapboxgl.NavigationControl());');
+  if (showScaleBar) controls.push('map.addControl(new mapboxgl.ScaleControl());');
 
   const markerScript = showMarker
     ? `new mapboxgl.Marker().setLngLat([${longitude}, ${latitude}]).addTo(map);`
@@ -87,7 +102,9 @@ export function buildMapEmbedHtml(
     center:[${longitude},${latitude}],
     zoom:${zoom},
     attributionControl:true
-  });${interactiveHandlers}
+  });
+  ${disableHandlers.join('\n  ')}
+  ${controls.join('\n  ')}
   ${markerScript}
 <${'/'}script>
 </body>
