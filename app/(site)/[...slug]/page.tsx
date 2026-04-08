@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { buildSlugPath } from '@/lib/page-utils';
 import { generatePageMetadata, fetchGlobalPageSettings } from '@/lib/generate-page-metadata';
-import { fetchPageByPath, fetchErrorPage } from '@/lib/page-fetcher';
+import { fetchPageByPath, fetchPageByPathForMetadata, fetchErrorPage } from '@/lib/page-fetcher';
 import PageRenderer from '@/components/PageRenderer';
 import PasswordForm from '@/components/PasswordForm';
 import { getSettingByKey } from '@/lib/repositories/settingsRepository';
@@ -150,22 +150,17 @@ export async function generateStaticParams() {
  */
 async function fetchPublishedPageWithLayers(slugPath: string) {
   try {
-    return await unstable_cache(
-      async () => fetchPageByPath(slugPath, true),
-      [`data-for-route-/${slugPath}`],
-      {
-        tags: ['all-pages', `route-/${slugPath}`], // all-pages for full publish invalidation
-        revalidate: false,
-      }
-    )();
+    return await fetchPageByPath(slugPath, true);
   } catch {
-    // Fallback to uncached fetch when data exceeds cache size limit (2MB).
-    // If runtime credentials are unavailable (e.g. build-time), return null.
-    try {
-      return await fetchPageByPath(slugPath, true);
-    } catch {
-      return null;
-    }
+    return null;
+  }
+}
+
+async function fetchPublishedPageForMetadata(slugPath: string) {
+  try {
+    return await fetchPageByPathForMetadata(slugPath, true);
+  } catch {
+    return null;
   }
 }
 
@@ -254,11 +249,11 @@ export default async function Page({ params }: PageProps) {
     }
   }
 
-  // Cache-first slug path; pagination is served through internal dynamic routes.
-  const data = await fetchPublishedPageWithLayers(slugPath);
-
-  // Load all global settings early so error pages also get global custom code
-  const globalSettings = await fetchCachedGlobalSettings();
+  // Fetch page data and global settings in parallel
+  const [data, globalSettings] = await Promise.all([
+    fetchPublishedPageWithLayers(slugPath),
+    fetchCachedGlobalSettings(),
+  ]);
 
   // If page not found, try to show custom 404 error page
   if (!data) {
@@ -368,7 +363,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
   // Fetch page and global settings in parallel
   const [data, globalSettings] = await Promise.all([
-    fetchPublishedPageWithLayers(slugPath),
+    fetchPublishedPageForMetadata(slugPath),
     fetchCachedGlobalSettings(),
   ]);
 

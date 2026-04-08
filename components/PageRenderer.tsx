@@ -6,6 +6,7 @@ import LayerRenderer from '@/components/LayerRenderer';
 import SliderInitializer from '@/components/SliderInitializer';
 import LightboxInitializer from '@/components/LightboxInitializer';
 import PasswordForm from '@/components/PasswordForm';
+import { unstable_cache } from 'next/cache';
 import { resolveCustomCodePlaceholders } from '@/lib/resolve-cms-variables';
 import { renderRootLayoutHeadCode } from '@/lib/parse-head-html';
 import { generateInitialAnimationCSS, type HiddenLayerInfo } from '@/lib/animation-utils';
@@ -15,13 +16,25 @@ import { getAllPages } from '@/lib/repositories/pageRepository';
 import { getAllPageFolders } from '@/lib/repositories/pageFolderRepository';
 import { getMapboxAccessToken, getGoogleMapsEmbedApiKey } from '@/lib/map-server';
 import { getAllColorVariables } from '@/lib/repositories/colorVariableRepository';
-import { getItemWithValues, getItemsWithValues } from '@/lib/repositories/collectionItemRepository';
+import { getItemsWithValues, getItemsWithValuesByIds } from '@/lib/repositories/collectionItemRepository';
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
 import { REF_PAGE_PREFIX, REF_COLLECTION_PREFIX } from '@/lib/link-utils';
 import { getClassesString } from '@/lib/layer-utils';
 import type { Layer, Component, Page, CollectionItemWithValues, CollectionField, Locale, PageFolder } from '@/types';
 
 interface PageLinkRef { collection_item_id: string; page_id: string }
+
+const getCachedPublishedPages = unstable_cache(
+  async () => getAllPages({ is_published: true }),
+  ['page-renderer-published-pages'],
+  { tags: ['all-pages'], revalidate: false }
+);
+
+const getCachedPublishedFolders = unstable_cache(
+  async () => getAllPageFolders({ is_published: true }),
+  ['page-renderer-published-folders'],
+  { tags: ['all-pages'], revalidate: false }
+);
 
 /** Recursively collect all page link refs ({collection_item_id, page_id}) from a Tiptap JSON node */
 function collectTiptapPageLinks(node: any): PageLinkRef[] {
@@ -162,6 +175,7 @@ export default async function PageRenderer({
   ycodeBadge = true,
   passwordProtection,
 }: PageRendererProps) {
+  const usePublishedData = page.is_published && !isPreview;
   // Check if this is a 401 error page that needs password form
   const is401Page = page.error_page === 401;
   // Layers are always pre-resolved by the caller (page-fetcher).
@@ -192,57 +206,65 @@ export default async function PageRenderer({
     }
   }
 
-  // Fetch pages and folders for link resolution using repository functions
-  // These are needed to resolve page links to their URLs
   let pages: Page[] = [];
   let folders: PageFolder[] = [];
 
   try {
-    // Use repository functions which work reliably
-    [pages, folders] = await Promise.all([
-      getAllPages(),
-      getAllPageFolders(),
+    // Start pages/folders fetch and referenced-item fetch in parallel
+    const itemsMapPromise = referencedItemIds.size > 0
+      ? getItemsWithValuesByIds(Array.from(referencedItemIds), usePublishedData)
+      : Promise.resolve({} as Record<string, import('@/types').CollectionItemWithValues>);
+
+    [[pages, folders]] = await Promise.all([
+      usePublishedData
+        ? Promise.all([getCachedPublishedPages(), getCachedPublishedFolders()])
+        : Promise.all([
+          getAllPages({ is_published: false }),
+          getAllPageFolders({ is_published: false }),
+        ]),
+      itemsMapPromise.then(async (itemsMap) => {
+        const collectionIds = new Set(Object.values(itemsMap).map(i => i.collection_id));
+        const fieldsByCollection = new Map<string, CollectionField[]>();
+        await Promise.all(
+          Array.from(collectionIds).map(async (collId) => {
+            const fields = await getFieldsByCollectionId(collId, usePublishedData);
+            fieldsByCollection.set(collId, fields);
+          })
+        );
+
+        for (const item of Object.values(itemsMap)) {
+          const fields = fieldsByCollection.get(item.collection_id);
+          const slugField = fields?.find(f => f.key === 'slug');
+          if (slugField && item.values[slugField.id]) {
+            collectionItemSlugs[item.id] = item.values[slugField.id];
+          }
+        }
+      }),
     ]);
 
-    // Fetch collection items if we have references to them
-    if (referencedItemIds.size > 0) {
-      // Fetch items using repository function which handles EAV properly
-      const itemsWithValues = await Promise.all(
-        Array.from(referencedItemIds).map(itemId => getItemWithValues(itemId, false))
-      );
-
-      // For each item, find its collection's slug field and extract the slug
-      for (const item of itemsWithValues) {
-        if (!item) continue;
-
-        // Get the slug field for this item's collection
-        const fields = await getFieldsByCollectionId(item.collection_id, false);
-        const slugField = fields.find(f => f.key === 'slug');
-
-        if (slugField && item.values[slugField.id]) {
-          collectionItemSlugs[item.id] = item.values[slugField.id];
-        }
-      }
-    }
-
-    // Fetch slugs for all items in collections targeted by ref-* links
+    // ref-* links depend on `pages` being resolved, so this runs after
     const refTargetCollectionIds = new Set(
       allPageLinks
         .filter(l => l.collection_item_id.startsWith(REF_PAGE_PREFIX) || l.collection_item_id.startsWith(REF_COLLECTION_PREFIX))
         .map(l => pages.find(p => p.id === l.page_id)?.settings?.cms?.collection_id)
         .filter((id): id is string => !!id)
     );
-    for (const collId of refTargetCollectionIds) {
-      const fields = await getFieldsByCollectionId(collId, false);
-      const slugField = fields.find(f => f.key === 'slug');
-      if (!slugField) continue;
-
-      const { items } = await getItemsWithValues(collId, false);
-      for (const item of items) {
-        if (item.values[slugField.id]) {
-          collectionItemSlugs[item.id] = item.values[slugField.id];
-        }
-      }
+    if (refTargetCollectionIds.size > 0) {
+      await Promise.all(
+        Array.from(refTargetCollectionIds).map(async (collId) => {
+          const [fields, { items }] = await Promise.all([
+            getFieldsByCollectionId(collId, usePublishedData),
+            getItemsWithValues(collId, usePublishedData),
+          ]);
+          const slugField = fields.find(f => f.key === 'slug');
+          if (!slugField) return;
+          for (const item of items) {
+            if (item.values[slugField.id]) {
+              collectionItemSlugs[item.id] = item.values[slugField.id];
+            }
+          }
+        })
+      );
     }
   } catch (error) {
     console.error('[PageRenderer] Error fetching link resolution data:', error);
