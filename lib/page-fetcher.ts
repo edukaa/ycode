@@ -84,6 +84,21 @@ export interface PageData {
 }
 
 /**
+ * Strip heavy data from PageData to reduce serialized size for caching.
+ * After the server-side resolution pipeline (resolveComponents → resolveCollectionLayers
+ * → resolveRichTextCollections → resolveAllAssets), component layers are fully expanded
+ * in the layer tree and rich-text embedded components have pre-resolved _resolvedLayers.
+ * This strips component layers and pageLayers metadata that aren't needed downstream.
+ */
+export function slimPageData(data: PageData): PageData {
+  return {
+    ...data,
+    pageLayers: { layers: data.pageLayers.layers || [] } as PageLayers,
+    components: data.components.map(({ layers, ...rest }) => ({ ...rest, layers: [] }) as Component),
+  };
+}
+
+/**
  * Match a URL path against a dynamic page pattern and extract the slug value
  * @param urlPath - The URL path (e.g., "/products/item-1")
  * @param patternPath - The pattern path with {slug} placeholder (e.g., "/products/{slug}")
@@ -4256,15 +4271,21 @@ function layerToHtml(
         ? (componentId, overrides, preResolvedLayers) => {
           if (ancestorComponentIds?.has(componentId)) return '';
           const comp = components.find(c => c.id === componentId);
-          if (!comp?.layers?.length) return '';
+          if (!comp) return '';
           const childAncestors = new Set(ancestorComponentIds);
           childAncestors.add(componentId);
           // Use pre-resolved layers (with collections) when available from resolveRichTextCollections
-          const resolved = preResolvedLayers
-            ?? resolveComponents(
+          let resolved: Layer[];
+          if (preResolvedLayers) {
+            resolved = preResolvedLayers;
+          } else if (comp.layers?.length) {
+            resolved = resolveComponents(
               applyComponentOverrides(comp.layers, overrides, comp.variables),
               components, comp.variables, overrides,
             );
+          } else {
+            return '';
+          }
           const withAssets = assetMap
             ? resolved.map(l => resolveLayerAssets(l, assetMap))
             : resolved;

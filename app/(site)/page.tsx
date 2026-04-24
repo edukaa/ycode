@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache';
 import Link from 'next/link';
-import { fetchHomepage, fetchErrorPage } from '@/lib/page-fetcher';
+import { fetchHomepage, fetchErrorPage, slimPageData } from '@/lib/page-fetcher';
 import PageRenderer from '@/components/PageRenderer';
 import PasswordForm from '@/components/PasswordForm';
 import { generatePageMetadata, fetchGlobalPageSettings } from '@/lib/generate-page-metadata';
@@ -18,10 +18,13 @@ export const revalidate = false; // Cache indefinitely until publish invalidates
 async function fetchPublishedHomepage() {
   try {
     return await unstable_cache(
-      async () => fetchHomepage(true),
+      async () => {
+        const data = await fetchHomepage(true);
+        return data ? slimPageData(data) : null;
+      },
       ['data-for-route-/'],
       {
-        tags: ['all-pages', 'route-/'], // all-pages for full publish invalidation, route-/ for targeted
+        tags: ['all-pages', 'route-/'],
         revalidate: false,
       }
     )();
@@ -74,7 +77,10 @@ async function fetchCachedFoldersForAuth() {
 async function fetchCachedErrorPage(errorCode: 401) {
   try {
     return await unstable_cache(
-      async () => fetchErrorPage(errorCode, true),
+      async () => {
+        const data = await fetchErrorPage(errorCode, true);
+        return data ? slimPageData(data) : null;
+      },
       [`data-for-error-page-${errorCode}`],
       { tags: ['all-pages'], revalidate: false }
     )();

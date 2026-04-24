@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { buildSlugPath } from '@/lib/page-utils';
 import { generatePageMetadata, fetchGlobalPageSettings } from '@/lib/generate-page-metadata';
-import { fetchPageByPath, fetchPageByPathForMetadata, fetchErrorPage } from '@/lib/page-fetcher';
+import { fetchPageByPath, fetchPageByPathForMetadata, fetchErrorPage, slimPageData } from '@/lib/page-fetcher';
 import PageRenderer from '@/components/PageRenderer';
 import PasswordForm from '@/components/PasswordForm';
 import { getSettingByKey } from '@/lib/repositories/settingsRepository';
@@ -150,17 +150,43 @@ export async function generateStaticParams() {
  */
 async function fetchPublishedPageWithLayers(slugPath: string) {
   try {
-    return await fetchPageByPath(slugPath, true);
+    return await unstable_cache(
+      async () => {
+        const data = await fetchPageByPath(slugPath, true);
+        return data ? slimPageData(data) : null;
+      },
+      [`data-for-route-/${slugPath}`],
+      {
+        tags: ['all-pages', `route-/${slugPath}`],
+        revalidate: false,
+      }
+    )();
   } catch {
-    return null;
+    // Fallback to uncached fetch when data exceeds cache size limit (2MB)
+    try {
+      return await fetchPageByPath(slugPath, true);
+    } catch {
+      return null;
+    }
   }
 }
 
 async function fetchPublishedPageForMetadata(slugPath: string) {
   try {
-    return await fetchPageByPathForMetadata(slugPath, true);
+    return await unstable_cache(
+      async () => fetchPageByPathForMetadata(slugPath, true),
+      [`metadata-for-route-/${slugPath}`],
+      {
+        tags: ['all-pages', `route-/${slugPath}`],
+        revalidate: false,
+      }
+    )();
   } catch {
-    return null;
+    try {
+      return await fetchPageByPathForMetadata(slugPath, true);
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -214,7 +240,10 @@ async function fetchCachedFoldersForAuth() {
 async function fetchCachedErrorPage(errorCode: 401 | 404) {
   try {
     return await unstable_cache(
-      async () => fetchErrorPage(errorCode, true),
+      async () => {
+        const data = await fetchErrorPage(errorCode, true);
+        return data ? slimPageData(data) : null;
+      },
       [`data-for-error-page-${errorCode}`],
       { tags: ['all-pages'], revalidate: false }
     )();
