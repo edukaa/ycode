@@ -284,10 +284,12 @@ export async function exportTemplateSQL(
         query = query.where('is_published', false);
       }
 
-      // For assets table, exclude any seeded/external icons
+      // For assets table, include all user-uploaded assets but exclude those
+      // sourced from other templates (which would have stale CDN URLs)
       if (table === 'assets') {
         query = query.where(function() {
-          this.whereNull('source').orWhere('source', 'file-manager');
+          this.whereNull('source')
+            .orWhereNot('source', 'like', 'template:%');
         });
       }
 
