@@ -259,7 +259,10 @@ export function CSVImportDialog({
 
         if (response.status === 413) {
           if (batchSize <= BATCH_SIZE_MIN) {
-            throw new Error('Row payload too large for server — try removing large content from the CSV');
+            // Single row exceeds server body limit — skip it and continue
+            console.warn(`Row ${offset + 1} payload too large (413), skipping`);
+            offset += 1;
+            continue;
           }
           batchSize = Math.max(BATCH_SIZE_MIN, Math.floor(batchSize / 2));
           continue;
