@@ -490,10 +490,20 @@ export async function POST(request: NextRequest) {
     if (preparedRows.length > 0) {
       await createItemsBulk(preparedRows.map(r => r.item));
 
+      const LARGE_VALUE_THRESHOLD = 500_000;
+
       for (const row of preparedRows) {
         try {
           if (row.values.length > 0) {
-            await insertValuesBulk(row.values);
+            const hasLargeValue = row.values.some(v => (v.value?.length ?? 0) > LARGE_VALUE_THRESHOLD);
+
+            if (hasLargeValue) {
+              for (const val of row.values) {
+                await insertValuesBulk([val]);
+              }
+            } else {
+              await insertValuesBulk(row.values);
+            }
           }
           processedCount++;
         } catch (error) {

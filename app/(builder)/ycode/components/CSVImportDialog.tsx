@@ -356,30 +356,30 @@ export function CSVImportDialog({
           body: JSON.stringify({ importId: id, rows: batch }),
         });
 
-        const data = await response.json();
+        if (response.ok) {
+          const data = await response.json();
+          setImportStatus(data.data);
 
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to process import');
+          const serverProcessed = (data.data.processedRows ?? 0) + (data.data.failedRows ?? 0);
+          currentIndex = serverProcessed;
+
+          if (data.data.status === 'completed' || data.data.status === 'failed' || data.data.isComplete) {
+            setImporting(false);
+            setStep('complete');
+            onImportComplete?.();
+            return;
+          }
+        } else {
+          // Server returned an error (e.g. 500/OOM) — skip this batch and continue
+          console.error(`Process request failed with status ${response.status}`);
+          currentIndex += batch.length;
         }
-
-        setImportStatus(data.data);
-
-        const serverProcessed = (data.data.processedRows ?? 0) + (data.data.failedRows ?? 0);
-        currentIndex = serverProcessed;
 
         await new Promise(resolve => setTimeout(resolve, 0));
-
-        if (data.data.status === 'completed' || data.data.status === 'failed' || data.data.isComplete) {
-          setImporting(false);
-          setStep('complete');
-          onImportComplete?.();
-          return;
-        }
       } catch (err) {
+        // Network error or server crash — skip batch and continue
         console.error('Process error:', err);
-        setImporting(false);
-        setStep('complete');
-        return;
+        currentIndex += batch.length;
       }
     }
 
