@@ -67,7 +67,6 @@ async function downloadAndUploadAsset(url: string): Promise<UploadedAsset | null
     }
 
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    const blob = await response.blob();
 
     let filename = extractFilenameFromUrl(url);
     if (!filename) {
@@ -75,7 +74,9 @@ async function downloadAndUploadAsset(url: string): Promise<UploadedAsset | null
       filename = `imported-${Date.now()}.${ext}`;
     }
 
-    const file = new File([blob], filename, { type: contentType });
+    // Use arrayBuffer directly — avoids the extra blob→File copy
+    const buffer = await response.arrayBuffer();
+    const file = new File([buffer], filename, { type: contentType });
     const asset = await uploadFile(file, 'csv-import');
 
     if (!asset) {
@@ -203,6 +204,8 @@ const STORAGE_BATCH_SIZE = 1;
 /**
  * Fallback: download and parse the CSV from Supabase Storage.
  * Used for oversized rows that can't fit in the request body.
+ * Extracts only the needed slice and dereferences the full CSV
+ * so GC can reclaim it before the heavy processing phase.
  */
 async function loadRowsFromStorage(
   csvMeta: { storage_path?: string } | null,
@@ -217,22 +220,24 @@ async function loadRowsFromStorage(
     throw new Error('Storage not configured');
   }
 
-  const { data: fileBlob, error: downloadError } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .download(csvMeta.storage_path);
+  let rows: Record<string, string>[];
+  {
+    const { data: fileBlob, error: downloadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .download(csvMeta.storage_path);
 
-  if (downloadError || !fileBlob) {
-    console.error('Failed to download CSV from storage:', downloadError);
-    throw new Error('Failed to read CSV file from storage');
+    if (downloadError || !fileBlob) {
+      console.error('Failed to download CSV from storage:', downloadError);
+      throw new Error('Failed to read CSV file from storage');
+    }
+
+    const csvText = await fileBlob.text();
+    const parsed = parseCSVText(csvText);
+    rows = parsed.rows.slice(startIndex, startIndex + STORAGE_BATCH_SIZE);
   }
+  // fileBlob, csvText, parsed all out of scope — eligible for GC
 
-  const csvText = await fileBlob.text();
-  const parsed = parseCSVText(csvText);
-
-  return {
-    rows: parsed.rows.slice(startIndex, startIndex + STORAGE_BATCH_SIZE),
-    supabase,
-  };
+  return { rows, supabase };
 }
 
 /**
@@ -295,9 +300,9 @@ export async function POST(request: NextRequest) {
     const startIndex = importJob.processed_rows + importJob.failed_rows;
     const csvMeta = importJob.csv_data as { storage_path?: string } | null;
 
-    // Resolve rows: use client-provided rows or fall back to storage download
     let rowsToProcess: Record<string, string>[];
     let supabaseForCleanup: Awaited<ReturnType<typeof getSupabaseAdmin>> = null;
+    let isStorageFallback = false;
 
     if (clientRows && Array.isArray(clientRows) && clientRows.length > 0) {
       rowsToProcess = clientRows;
@@ -305,6 +310,7 @@ export async function POST(request: NextRequest) {
       const storageResult = await loadRowsFromStorage(csvMeta, startIndex);
       rowsToProcess = storageResult.rows;
       supabaseForCleanup = storageResult.supabase;
+      isStorageFallback = true;
     }
 
     if (rowsToProcess.length === 0) {
@@ -425,8 +431,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 3) Download + upload only the URLs not already in the DB (parallel, batched)
-      const ASSET_CONCURRENCY = 20;
+      const ASSET_CONCURRENCY = isStorageFallback ? 5 : 20;
       for (let i = 0; i < urlsToDownload.length; i += ASSET_CONCURRENCY) {
         const batch = urlsToDownload.slice(i, i + ASSET_CONCURRENCY);
         const results = await Promise.allSettled(
