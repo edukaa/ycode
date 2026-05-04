@@ -306,17 +306,45 @@ export function CSVImportDialog({
       const batch = buildBatch(currentIndex);
 
       if (batch.length === 0) {
-        // Single row exceeds body limit — tell the server to process it from storage
+        // Single row exceeds body limit — server processes it from storage
+        let advanced = false;
         try {
           const response = await fetch('/ycode/api/collections/import/process', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ importId: id }),
           });
-          const data = await response.json();
-          if (response.ok) setImportStatus(data.data);
-        } catch { /* best-effort */ }
-        currentIndex++;
+          if (response.ok) {
+            const data = await response.json();
+            setImportStatus(data.data);
+            const serverProcessed = (data.data.processedRows ?? 0) + (data.data.failedRows ?? 0);
+            if (serverProcessed > currentIndex) {
+              currentIndex = serverProcessed;
+              advanced = true;
+            }
+            if (data.data.isComplete) {
+              setImporting(false);
+              setStep('complete');
+              onImportComplete?.();
+              return;
+            }
+          }
+        } catch {
+          // Server crashed (e.g. OOM) — re-sync with actual server progress
+          // to avoid re-inserting rows that committed before the crash
+          try {
+            const statusRes = await fetch(`/ycode/api/collections/import/${id}/status`);
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              const serverProcessed = (statusData.data?.processedRows ?? 0) + (statusData.data?.failedRows ?? 0);
+              if (serverProcessed > currentIndex) {
+                currentIndex = serverProcessed;
+                advanced = true;
+              }
+            }
+          } catch { /* unable to re-sync */ }
+        }
+        if (!advanced) currentIndex++;
         await new Promise(resolve => setTimeout(resolve, 0));
         continue;
       }

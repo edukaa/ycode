@@ -197,11 +197,12 @@ function prepareRow(
   };
 }
 
-const BATCH_SIZE = 20;
+/** Process 1 row at a time from storage to keep peak memory low. */
+const STORAGE_BATCH_SIZE = 1;
 
 /**
  * Fallback: download and parse the CSV from Supabase Storage.
- * Used when the client doesn't provide rows directly (e.g. resume after page reload).
+ * Used for oversized rows that can't fit in the request body.
  */
 async function loadRowsFromStorage(
   csvMeta: { storage_path?: string } | null,
@@ -229,7 +230,7 @@ async function loadRowsFromStorage(
   const parsed = parseCSVText(csvText);
 
   return {
-    rows: parsed.rows.slice(startIndex, startIndex + BATCH_SIZE),
+    rows: parsed.rows.slice(startIndex, startIndex + STORAGE_BATCH_SIZE),
     supabase,
   };
 }
