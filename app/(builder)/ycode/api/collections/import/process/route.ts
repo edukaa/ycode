@@ -404,7 +404,6 @@ export async function POST(request: NextRequest) {
     ]);
 
     if (allUniqueUrls.size > 0) {
-      // 1) Extract filenames from all URLs and batch-query existing assets (1 DB query)
       const urlToFilename = new Map<string, string>();
       const filenamesToCheck: string[] = [];
       for (const url of allUniqueUrls) {
@@ -417,7 +416,6 @@ export async function POST(request: NextRequest) {
 
       const existingAssets = await findAssetsByFilenames(filenamesToCheck);
 
-      // 2) Resolve URLs: reuse existing assets or mark for download
       const urlToUploadedAsset = new Map<string, UploadedAsset>();
       const urlsToDownload: string[] = [];
 
@@ -492,24 +490,54 @@ export async function POST(request: NextRequest) {
 
       const LARGE_VALUE_THRESHOLD = 500_000;
 
+      // Separate rows with large values (need Knex direct PG) from normal ones
+      const normalRows: PreparedRow[] = [];
+      const largeRows: PreparedRow[] = [];
+
       for (const row of preparedRows) {
+        if (row.values.some(v => (v.value?.length ?? 0) > LARGE_VALUE_THRESHOLD)) {
+          largeRows.push(row);
+        } else {
+          normalRows.push(row);
+        }
+      }
+
+      // Bulk insert all normal values in one call
+      if (normalRows.length > 0) {
+        const allValues = normalRows.flatMap(r => r.values);
+        try {
+          if (allValues.length > 0) {
+            await insertValuesBulk(allValues);
+          }
+          processedCount += normalRows.length;
+        } catch (error) {
+          // Fallback: insert per row to identify which one failed
+          for (const row of normalRows) {
+            try {
+              if (row.values.length > 0) {
+                await insertValuesBulk(row.values);
+              }
+              processedCount++;
+            } catch (rowError) {
+              failedCount++;
+              errors.push(`Row ${row.rowNumber}: DB insert failed — ${getErrorMessage(rowError)}`);
+              try { await deleteItem(row.itemId); } catch { /* best-effort */ }
+            }
+          }
+        }
+      }
+
+      // Large rows use direct PG with extended timeout
+      for (const row of largeRows) {
         try {
           if (row.values.length > 0) {
-            const hasLargeValue = row.values.some(v => (v.value?.length ?? 0) > LARGE_VALUE_THRESHOLD);
-
-            if (hasLargeValue) {
-              await insertValuesDirectPg(row.values);
-            } else {
-              await insertValuesBulk(row.values);
-            }
+            await insertValuesDirectPg(row.values);
           }
           processedCount++;
         } catch (error) {
           failedCount++;
           errors.push(`Row ${row.rowNumber}: DB insert failed — ${getErrorMessage(error)}`);
-          try {
-            await deleteItem(row.itemId);
-          } catch { /* best-effort cleanup */ }
+          try { await deleteItem(row.itemId); } catch { /* best-effort */ }
         }
       }
     }

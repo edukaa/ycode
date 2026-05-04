@@ -275,18 +275,29 @@ export function CSVImportDialog({
 
   // Vercel serverless body limit is 4.5MB; stay well under it.
   const MAX_BODY_BYTES = 3_500_000;
-  const MAX_BATCH_SIZE = 10;
+  const MAX_BATCH_SIZE = 15;
 
-  /** Build the next batch of rows that fits within the body size limit. */
+  /** Strip columns mapped to __skip__ so we only send data the server needs. */
+  const stripSkippedColumns = (row: Record<string, string>): Record<string, string> => {
+    const stripped: Record<string, string> = {};
+    for (const [col, fieldId] of Object.entries(columnMapping)) {
+      if (fieldId && fieldId !== SKIP_COLUMN && col in row) {
+        stripped[col] = row[col];
+      }
+    }
+    return stripped;
+  };
+
+  /** Build the next batch of stripped rows that fits within the body size limit. */
   const buildBatch = (startIndex: number): Record<string, string>[] => {
     const batch: Record<string, string>[] = [];
     let estimatedSize = 0;
 
     for (let i = startIndex; i < rows.length && batch.length < MAX_BATCH_SIZE; i++) {
-      const row = rows[i];
-      const rowSize = Object.values(row).reduce((sum, v) => sum + v.length, 0) * 2;
+      const stripped = stripSkippedColumns(rows[i]);
+      const rowSize = Object.values(stripped).reduce((sum, v) => sum + v.length, 0) * 2;
       if (estimatedSize + rowSize > MAX_BODY_BYTES) break;
-      batch.push(row);
+      batch.push(stripped);
       estimatedSize += rowSize;
     }
 
