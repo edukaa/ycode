@@ -343,7 +343,10 @@ const LeftSidebar = React.memo(function LeftSidebar({
                 </div>
               </header>
 
-              <div className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-auto no-scrollbar">
+              <div
+                className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-auto no-scrollbar"
+                style={{ '--tree-available-width': `${sidebarWidth - 33}px` } as React.CSSProperties}
+              >
                 {!currentPageId && !editingComponentId ? (
                   <Empty>
                     <EmptyTitle>No page selected</EmptyTitle>
