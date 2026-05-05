@@ -156,6 +156,9 @@ interface EditorStoreWithHistory extends EditorState {
   // Slider transition state (hides outlines during slide animation)
   isSliderAnimating: boolean;
   setSliderAnimating: (value: boolean) => void;
+  // Sidebar resize state (hides outlines during resize drag)
+  isSidebarResizing: boolean;
+  setSidebarResizing: (value: boolean) => void;
   // Canvas context menu state (hides overlay while menu is open)
   isCanvasContextMenuOpen: boolean;
   setCanvasContextMenuOpen: (value: boolean) => void;
@@ -243,6 +246,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   canvasDropTarget: null,
   isSliderAnimating: false,
   setSliderAnimating: (value) => set({ isSliderAnimating: value }),
+  isSidebarResizing: false,
+  setSidebarResizing: (value) => set({ isSidebarResizing: value }),
   isCanvasContextMenuOpen: false,
   setCanvasContextMenuOpen: (value) => set({ isCanvasContextMenuOpen: value }),
   sliderSnapCounts: {},

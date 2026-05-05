@@ -24,6 +24,7 @@ import { resetBindingsAfterMove } from '@/lib/layer-utils';
 import { useEditorUrl } from '@/hooks/use-editor-url';
 import type { EditorTab } from '@/hooks/use-editor-url';
 import { useLayerLocks } from '@/hooks/use-layer-locks';
+import { useResizableSidebar } from '@/hooks/use-resizable-sidebar';
 
 // 6. Types
 import type { Layer } from '@/types';
@@ -53,6 +54,7 @@ const LeftSidebar = React.memo(function LeftSidebar({
 }: LeftSidebarProps) {
   const { sidebarTab } = useEditorUrl();
   const [showElementLibrary, setShowElementLibrary] = useState(false);
+  const { width: sidebarWidth, isDragging: isResizing, handleMouseDown: handleResizeMouseDown } = useResizableSidebar({ side: 'left' });
   const [assetMessage, setAssetMessage] = useState<string | null>(null);
 
   // Optimize store subscriptions - scoped to current page only
@@ -284,7 +286,13 @@ const LeftSidebar = React.memo(function LeftSidebar({
 
   return (
     <>
-      <div className="w-64 shrink-0 bg-background border-r flex overflow-hidden p-4 pb-0">
+      <div
+        className="shrink-0 relative"
+        style={{ width: `${sidebarWidth}px` }}
+      >
+      <div
+        className="w-full h-full bg-background border-r flex overflow-hidden p-4 pb-0"
+      >
         {/* Tabs */}
         <div className="w-full">
           <Tabs
@@ -371,7 +379,22 @@ const LeftSidebar = React.memo(function LeftSidebar({
 
           </Tabs>
         </div>
+
       </div>
+
+      {/* Resize handle - wide hit area, thin visible line on hover */}
+      <div
+        onMouseDown={handleResizeMouseDown}
+        className="absolute top-0 -right-1.5 w-3 h-full cursor-col-resize z-30 flex items-center justify-center group/resize"
+      >
+        <div className="w-0.5 h-full bg-transparent group-hover/resize:bg-primary/50 group-active/resize:bg-primary/70 transition-colors" />
+      </div>
+      </div>
+
+      {/* Invisible overlay during resize to prevent iframe from capturing mouse events */}
+      {isResizing && (
+        <div className="fixed inset-0 z-50 cursor-col-resize" />
+      )}
 
       {/* Element Library Slide-Out (lazy loaded, always mounted to preserve state) */}
       <Suspense fallback={null}>
@@ -379,6 +402,7 @@ const LeftSidebar = React.memo(function LeftSidebar({
           isOpen={showElementLibrary}
           onClose={() => setShowElementLibrary(false)}
           liveLayerUpdates={liveLayerUpdates}
+          sidebarWidth={sidebarWidth}
         />
       </Suspense>
     </>
