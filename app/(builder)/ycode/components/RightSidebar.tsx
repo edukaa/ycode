@@ -1831,31 +1831,22 @@ const RightSidebar = React.memo(function RightSidebar({
   return (
     <div className="w-64 shrink-0 bg-background border-l flex flex-col p-4 pb-0 h-full overflow-hidden">
       {/* Tabs.
-          When the user is translating (non-default locale active) we hide
-          the Design + Interactions tabs entirely and force the Settings tab,
-          which is where the per-layer Translate panel renders. */}
+          When the user is translating (non-default locale active) we keep the
+          tab list visible but disable Design + Interactions and force the
+          Settings tab, which is where the per-layer Translate panel renders.
+          Mirrors the disabled-tabs pattern used for component instances. */}
       <Tabs
         value={isLocalizing ? 'settings' : activeTab}
-        onValueChange={isLocalizing ? () => {} : handleTabChange}
+        onValueChange={isLocalizing ? () => { } : handleTabChange}
         className="flex flex-col flex-1 min-h-0 gap-0"
       >
-        {!isLocalizing && (
-          <div className="">
-            <TabsList className="w-full">
-              <TabsTrigger value="design">Design</TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-              <TabsTrigger value="interactions">Interactions</TabsTrigger>
-            </TabsList>
-          </div>
-        )}
-        {isLocalizing && currentLocale && (
-          <div className="flex items-center gap-2 px-1 pb-2">
-            <Icon name="globe" className="size-3 opacity-60" />
-            <span className="text-xs font-medium">
-              Translating to {currentLocale.label}
-            </span>
-          </div>
-        )}
+        <div className="">
+          <TabsList className="w-full">
+            <TabsTrigger value="design" disabled={isLocalizing}>Design</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="interactions" disabled={isLocalizing}>Interactions</TabsTrigger>
+          </TabsList>
+        </div>
 
         <hr className="mt-4" />
 
