@@ -260,7 +260,6 @@ export default async function Page({ params }: PageProps) {
   if (redirects && Array.isArray(redirects)) {
     const matchedRedirect = redirects.find((r) => r.oldUrl === currentPath);
     if (matchedRedirect) {
-      // Use permanentRedirect for 301 (default), redirect for 302
       if (matchedRedirect.type === '302') {
         redirect(matchedRedirect.newUrl);
       } else {
@@ -290,6 +289,7 @@ export default async function Page({ params }: PageProps) {
           generatedCss={globalSettings.publishedCss || undefined}
           globalCustomCodeHead={globalSettings.globalCustomCodeHead}
           globalCustomCodeBody={globalSettings.globalCustomCodeBody}
+          ycodeBadge={globalSettings.ycodeBadge}
         />
       );
     }
@@ -325,6 +325,7 @@ export default async function Page({ params }: PageProps) {
             generatedCss={globalSettings.publishedCss || undefined}
             globalCustomCodeHead={globalSettings.globalCustomCodeHead}
             globalCustomCodeBody={globalSettings.globalCustomCodeBody}
+            ycodeBadge={globalSettings.ycodeBadge}
             passwordProtection={{
               pageId: protection.protectedBy === 'page' ? protection.protectedById : undefined,
               folderId: protection.protectedBy === 'folder' ? protection.protectedById : undefined,

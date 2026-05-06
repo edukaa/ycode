@@ -55,20 +55,23 @@ export default async function DynamicSlugPage({ params, searchParams }: DynamicS
     defaultPage: 1,
   };
 
-  const data = await fetchPageByPath(slugPath, true, paginationContext);
+  const [data, globalSettings] = await Promise.all([
+    fetchPageByPath(slugPath, true, paginationContext),
+    fetchGlobalPageSettings(),
+  ]);
 
   if (!data) {
     const errorPageData = await fetchErrorPage(404, true);
     if (errorPageData) {
       const { page, pageLayers, components } = errorPageData;
-      const publishedCSS = await getSettingByKey('published_css');
 
       return (
         <PageRenderer
           page={page}
           layers={pageLayers.layers || []}
           components={components}
-          generatedCss={publishedCSS}
+          generatedCss={globalSettings.publishedCss || undefined}
+          ycodeBadge={globalSettings.ycodeBadge}
         />
       );
     }
@@ -87,7 +90,6 @@ export default async function DynamicSlugPage({ params, searchParams }: DynamicS
 
     if (!protection.isUnlocked) {
       const errorPageData = await fetchErrorPage(401, true);
-      const publishedCSS = await getSettingByKey('published_css');
 
       if (errorPageData) {
         const { page: errorPage, pageLayers: errorPageLayers, components: errorComponents } = errorPageData;
@@ -97,7 +99,8 @@ export default async function DynamicSlugPage({ params, searchParams }: DynamicS
             page={errorPage}
             layers={errorPageLayers.layers || []}
             components={errorComponents}
-            generatedCss={publishedCSS}
+            generatedCss={globalSettings.publishedCss || undefined}
+            ycodeBadge={globalSettings.ycodeBadge}
             passwordProtection={{
               pageId: protection.protectedBy === 'page' ? protection.protectedById : undefined,
               folderId: protection.protectedBy === 'folder' ? protection.protectedById : undefined,
@@ -125,8 +128,6 @@ export default async function DynamicSlugPage({ params, searchParams }: DynamicS
       );
     }
   }
-
-  const globalSettings = await fetchGlobalPageSettings();
 
   return (
     <PageRenderer
