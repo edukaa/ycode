@@ -279,7 +279,7 @@ export function parseCollectionLinkValue(value: string | CollectionLinkValue | u
 
   // If already an object, validate and return it
   if (typeof value === 'object' && 'type' in value) {
-    if (value.type === 'url' || value.type === 'page') {
+    if (value.type === 'url' || value.type === 'page' || value.type === 'asset') {
       return value as CollectionLinkValue;
     }
     return null;
@@ -292,7 +292,7 @@ export function parseCollectionLinkValue(value: string | CollectionLinkValue | u
       const parsed = JSON.parse(value);
       // Validate it has the expected structure
       if (parsed && typeof parsed === 'object' && 'type' in parsed) {
-        if (parsed.type === 'url' || parsed.type === 'page') {
+        if (parsed.type === 'url' || parsed.type === 'page' || parsed.type === 'asset') {
           return parsed as CollectionLinkValue;
         }
       }
@@ -387,10 +387,30 @@ export function resolveCollectionLinkValue(
   linkValue: CollectionLinkValue,
   context: LinkResolutionContext
 ): string | null {
-  const { pages, folders, collectionItemSlugs, isPreview, locale, translations } = context;
+  const { pages, folders, collectionItemSlugs, isPreview, locale, translations, getAsset, resolvedAssets } = context;
 
   if (linkValue.type === 'url') {
     return linkValue.url || null;
+  }
+
+  if (linkValue.type === 'asset') {
+    if (!linkValue.asset?.id) return null;
+
+    // SSR: use pre-resolved assets
+    if (resolvedAssets?.[linkValue.asset.id]) {
+      const resolved = resolvedAssets[linkValue.asset.id];
+      if (resolved.url.startsWith('<')) return '#no-svg-url';
+      return resolved.url;
+    }
+
+    // Client: use getAsset callback
+    if (getAsset) {
+      const asset = getAsset(linkValue.asset.id);
+      if (asset && !asset.public_url && asset.content) return '#no-svg-url';
+      return asset?.public_url || null;
+    }
+
+    return null;
   }
 
   if (linkValue.type === 'page') {
