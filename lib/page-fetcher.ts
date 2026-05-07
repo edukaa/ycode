@@ -6,6 +6,7 @@ import { buildSlugPath, buildDynamicPageUrl, buildLocalizedSlugPath, buildLocali
 import { getItemWithValues, getItemsWithValues, getItemsWithValuesByIds, getItemIdsByFieldValue, getItemsByCollectionId } from '@/lib/repositories/collectionItemRepository';
 import { getValuesByItemIds } from '@/lib/repositories/collectionItemValueRepository';
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
+import { enrichItemsWithCountValues } from '@/lib/repositories/collectionCountRepository';
 import type { Page, PageFolder, PageLayers, Component, ComponentVariable, CollectionItemWithValues, CollectionField, Layer, CollectionPaginationMeta, Translation, Locale } from '@/types';
 import { getCollectionVariable, resolveFieldValue, evaluateVisibility, getLayerHtmlTag, filterDisabledSliderLayers } from '@/lib/layer-utils';
 import { isFieldVariable, isAssetVariable, createDynamicTextVariable, createDynamicRichTextVariable, createAssetVariable, getDynamicTextContent, getVariableStringValue, getAssetId, resolveDesignStyles } from '@/lib/variable-utils';
@@ -1917,7 +1918,7 @@ async function buildCollectionCache(
   const ids = Array.from(collectionIds);
 
   // Phase 1: Fetch fields for all collections (needed to discover reference collections)
-  const { data: fieldsData } = await client
+  const { data: nonComputedFieldsData } = await client
     .from('collection_fields')
     .select('*')
     .in('collection_id', ids)
@@ -1926,6 +1927,20 @@ async function buildCollectionCache(
     .eq('is_computed', false)
     .order('order', { ascending: true })
     .limit(5000);
+
+  // Count fields are computed but their config is needed during render so layers
+  // bound to a count value can resolve correctly. Pull them in alongside the
+  // regular fields. Other computed types (e.g. status) are still excluded.
+  const { data: countFieldsData } = await client
+    .from('collection_fields')
+    .select('*')
+    .in('collection_id', ids)
+    .eq('is_published', isPublished)
+    .is('deleted_at', null)
+    .eq('type', 'count')
+    .limit(5000);
+
+  const fieldsData = [...(nonComputedFieldsData || []), ...(countFieldsData || [])];
 
   // Discover referenced collections so we can pre-fetch their data too.
   // When boundFieldIds is supplied, only follow reference fields that are bound.
@@ -2124,6 +2139,14 @@ export async function resolveCollectionLayers(
     mergedBoundFieldPaths.size > 0 ? mergedBoundFieldPaths : undefined,
     scannedCollectionIds.size > 0 ? scannedCollectionIds : undefined,
   );
+
+  // Inject computed count field values into the cached items so layers bound
+  // to a count field render the live number on SSR. Counts always reflect
+  // published child items, regardless of the surrounding `isPublished` mode.
+  for (const [collId, items] of cache.itemsByCollection) {
+    if (items.length === 0) continue;
+    await enrichItemsWithCountValues(items, collId, isPublished);
+  }
 
   const resolveLayer = async (
     layer: Layer,

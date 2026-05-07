@@ -971,7 +971,7 @@ export interface ActivityNotification {
 }
 
 // Collection Types (EAV Architecture)
-export type CollectionFieldType = 'text' | 'number' | 'boolean' | 'date' | 'date_only' | 'color' | 'reference' | 'multi_reference' | 'rich_text' | 'image' | 'audio' | 'video' | 'document' | 'link' | 'email' | 'phone' | 'option' | 'status';
+export type CollectionFieldType = 'text' | 'number' | 'boolean' | 'date' | 'date_only' | 'color' | 'reference' | 'multi_reference' | 'rich_text' | 'image' | 'audio' | 'video' | 'document' | 'link' | 'email' | 'phone' | 'option' | 'count' | 'status';
 export type CollectionSortDirection = 'asc' | 'desc' | 'manual';
 
 export interface CollectionSorting {
@@ -1010,6 +1010,8 @@ export interface UpdateCollectionData {
 export interface CollectionFieldData {
   multiple?: boolean; // For asset fields - allow multiple files
   options?: { id: string; name: string }[]; // For option fields - selectable values
+  // For count fields: which child collection / reference field to count back from
+  count?: { collectionId: string; fieldId: string };
 }
 
 export interface CreateCollectionFieldData {
