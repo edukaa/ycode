@@ -23,7 +23,7 @@ export interface PaginationContext {
   defaultPage?: number;
 }
 
-import { resolveFieldLinkValue, resolveRefCollectionItemId, generateLinkHref, isLinkAtCollectionBoundary } from '@/lib/link-utils';
+import { resolveFieldLinkValue, resolveRefCollectionItemId, generateLinkHref, isLinkAtCollectionBoundary, parseCollectionLinkValue } from '@/lib/link-utils';
 import type { LinkResolutionContext } from '@/lib/link-utils';
 import { getLinkSettingsFromMark } from '@/lib/tiptap-extensions/rich-text-link';
 import { SWIPER_CLASS_MAP, SWIPER_DATA_ATTR_MAP } from '@/lib/templates/utilities';
@@ -3181,10 +3181,20 @@ export async function renderCollectionItemsToHtml(
         const scan = (layer: Layer) => {
           const fieldType = layer.variables?.link?.field?.data?.field_type;
           const fieldId = layer.variables?.link?.field?.data?.field_id;
-          if (fieldType && assetFieldTypes.includes(fieldType) && fieldId) {
-            const assetId = item.values[fieldId];
-            if (assetId && !assetMap[assetId]) {
-              assetIds.push(assetId);
+          if (fieldType && fieldId) {
+            if (assetFieldTypes.includes(fieldType)) {
+              const assetId = item.values[fieldId];
+              if (assetId && !assetMap[assetId]) {
+                assetIds.push(assetId);
+              }
+            } else if (fieldType === 'link') {
+              const rawValue = item.values[fieldId];
+              if (rawValue) {
+                const linkValue = parseCollectionLinkValue(rawValue);
+                if (linkValue?.type === 'asset' && linkValue.asset?.id && !assetMap[linkValue.asset.id]) {
+                  assetIds.push(linkValue.asset.id);
+                }
+              }
             }
           }
           layer.children?.forEach(scan);
@@ -4406,6 +4416,7 @@ function layerToHtml(
               locale,
               translations,
               isPreview: false,
+              getAsset: makeAssetMapResolver(assetMap),
             },
             assetMap,
           });
@@ -4632,6 +4643,7 @@ function layerToHtml(
               locale,
               translations,
               isPreview: false,
+              getAsset: makeAssetMapResolver(assetMap),
             },
             assetMap,
           });

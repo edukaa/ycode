@@ -19,7 +19,7 @@ import { getMapboxAccessToken, getGoogleMapsEmbedApiKey } from '@/lib/map-server
 import { getAllColorVariables } from '@/lib/repositories/colorVariableRepository';
 import { getItemsWithValues, getItemsWithValuesByIds } from '@/lib/repositories/collectionItemRepository';
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
-import { REF_PAGE_PREFIX, REF_COLLECTION_PREFIX, isCollectionItemKeyword } from '@/lib/link-utils';
+import { REF_PAGE_PREFIX, REF_COLLECTION_PREFIX, isCollectionItemKeyword, parseCollectionLinkValue } from '@/lib/link-utils';
 import { getClassesString } from '@/lib/layer-utils';
 import type { Layer, Component, Page, CollectionItemWithValues, CollectionField, Locale, PageFolder } from '@/types';
 
@@ -401,8 +401,15 @@ export default async function PageRenderer({
   // Also collect from page collection item values (for dynamic pages)
   if (collectionItem) {
     for (const value of Object.values(collectionItem.values)) {
-      if (typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
-        layerAssetIds.add(value);
+      if (typeof value === 'string') {
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+          layerAssetIds.add(value);
+        } else if (value.startsWith('{')) {
+          const linkValue = parseCollectionLinkValue(value);
+          if (linkValue?.type === 'asset' && linkValue.asset?.id) {
+            layerAssetIds.add(linkValue.asset.id);
+          }
+        }
       }
     }
   }
