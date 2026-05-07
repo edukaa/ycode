@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import LayerRenderer from '@/components/LayerRenderer';
+import YcodeBadge from '@/components/YcodeBadge';
 import type { PageData } from '@/lib/page-fetcher';
 
 interface ErrorProps {
@@ -17,6 +18,7 @@ export default function Error({ error, reset }: ErrorProps) {
   const [errorPageData, setErrorPageData] = useState<PageData | null>(null);
   const [generatedCss, setGeneratedCss] = useState<string>('');
   const [colorVariablesCss, setColorVariablesCss] = useState<string>('');
+  const [showBadge, setShowBadge] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -30,6 +32,7 @@ export default function Error({ error, reset }: ErrorProps) {
           setErrorPageData(data.pageData);
           setGeneratedCss(data.css || '');
           setColorVariablesCss(data.colorVariablesCss || '');
+          setShowBadge(data.ycodeBadge ?? true);
         }
       } catch (err) {
         console.error('Failed to fetch custom 500 page:', err);
@@ -43,7 +46,6 @@ export default function Error({ error, reset }: ErrorProps) {
 
   if (isLoading) return null;
 
-  // If custom error page exists, render it
   if (errorPageData) {
     const customCodeHead = errorPageData.page.settings?.custom_code?.head || '';
     const customCodeBody = errorPageData.page.settings?.custom_code?.body || '';
@@ -76,11 +78,11 @@ export default function Error({ error, reset }: ErrorProps) {
         {customCodeBody && (
           <div dangerouslySetInnerHTML={{ __html: customCodeBody }} />
         )}
+        {showBadge && <YcodeBadge />}
       </>
     );
   }
 
-  // Fallback to default error page
   return (
     <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="text-center max-w-md px-4">
@@ -96,6 +98,7 @@ export default function Error({ error, reset }: ErrorProps) {
           Try Again
         </button>
       </div>
+      {showBadge && <YcodeBadge />}
     </div>
   );
 }
