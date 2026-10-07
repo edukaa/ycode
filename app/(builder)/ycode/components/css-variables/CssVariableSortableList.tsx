@@ -21,12 +21,13 @@ export function CssVariableDragHandle({ label }: { label: string }) {
       {...sortable.attributes}
       {...sortable.listeners}
       disabled={sortable.attributes['aria-disabled']}
+      aria-disabled={sortable.attributes['aria-disabled'] || undefined}
       aria-label={`Reorder ${label}`}
       title={`Drag to reorder ${label}`}
       onClick={event => event.stopPropagation()}
       className="shrink-0 size-4 flex items-center justify-center touch-none cursor-grab active:cursor-grabbing text-muted-foreground focus-visible:outline focus-visible:outline-2 rounded disabled:cursor-default disabled:opacity-30"
     >
-      <Icon name="grip-vertical" className="size-2.5" />
+      <Icon name="grip-vertical" className="size-3" />
     </button>
   );
 }
