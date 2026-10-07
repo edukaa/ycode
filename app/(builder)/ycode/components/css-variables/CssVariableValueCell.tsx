@@ -9,6 +9,7 @@
  */
 
 import React from 'react';
+import { DiamondPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
@@ -48,7 +49,7 @@ export default function CssVariableValueCell({
     return (
       <div className={cn('flex items-center gap-1 w-full', isUsingDefault && 'opacity-50')}>
         <div className="flex-1 h-8 px-2 rounded-lg border bg-muted/50 text-xs flex items-center gap-1.5">
-          <Icon name="link" className="size-3 text-muted-foreground" />
+          <DiamondPlus className="size-2.5 shrink-0 text-muted-foreground" />
           <span className="truncate">{referenced.name}</span>
         </div>
         <Button

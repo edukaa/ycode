@@ -6,6 +6,8 @@ import { cssVariableSetSchema, cssVariableModeSchema } from '@/lib/css-variable-
 import { parseTextShadow, serializeTextShadow } from '@/lib/text-shadow-utils';
 import { classesToDesign, designToClasses, getAffectedProperties, replaceConflictingClasses } from '@/lib/tailwind-class-mapper';
 import type { CssVariablesGraph, CssVariableType, DesignProperties } from '@/types';
+import { useCssVariablesStore } from '@/stores/useCssVariablesStore';
+import { cssVariablesApi } from '@/lib/api';
 
 function fixture(): CssVariablesGraph {
   return {
@@ -112,4 +114,73 @@ test('render legacy colors before the typed schema migration runs', () => {
   assert.equal(graph.variables[0].id, 'brand');
   assert.ok(buildCssVariablesStylesheet(graph).includes('--brand: rgba(255,0,0,0.5);'));
   assert.deepEqual(getDefaultColorVariables(graph), colors);
+});
+
+test('reordering one group preserves other groups, collections, values and IDs', async () => {
+  const graph = fixture();
+  graph.variables.push({ ...graph.variables[0], id: 'unrelated', set_id: 'another-set', sort_order: 42 });
+  const original = cssVariablesApi.reorderItems;
+  cssVariablesApi.reorderItems = async ids => {
+    assert.deepEqual(ids, ['semantic', 'color']);
+    return { data: { success: true } };
+  };
+  try {
+    useCssVariablesStore.setState({ graph, error: null });
+    await useCssVariablesStore.getState().reorderItems(['semantic', 'color']);
+    const next = useCssVariablesStore.getState().graph;
+    assert.deepEqual(next.variables.map(v => [v.id, v.sort_order]), [['color', 1], ['semantic', 0], ['unrelated', 42]]);
+    assert.deepEqual(next.values, graph.values);
+    assert.deepEqual(next.sets, graph.sets);
+  } finally {
+    cssVariablesApi.reorderItems = original;
+  }
+});
+
+test('failed ordering saves report API errors and keep edits made while saving', async () => {
+  const graph = fixture();
+  graph.sets.push({ ...graph.sets[0], id: 'another-set', name: 'Other', sort_order: 1 });
+  const original = cssVariablesApi.reorderSets;
+  let finish!: (response: { error: string }) => void;
+  cssVariablesApi.reorderSets = () => new Promise(resolve => { finish = resolve; });
+  try {
+    useCssVariablesStore.setState({ graph, error: null });
+    const save = useCssVariablesStore.getState().reorderSets(['another-set', 'set']);
+    await Promise.resolve();
+    assert.equal(useCssVariablesStore.getState().graph.sets[0].sort_order, 1);
+    useCssVariablesStore.setState(state => ({ graph: { ...state.graph, sets: state.graph.sets.map(s => s.id === 'set' ? { ...s, name: 'Renamed while saving' } : s) } }));
+    finish({ error: 'Permission denied' });
+    await save;
+    const state = useCssVariablesStore.getState();
+    assert.equal(state.error, 'Permission denied');
+    assert.equal(state.graph.sets[0].sort_order, 0);
+    assert.equal(state.graph.sets[0].name, 'Renamed while saving');
+    assert.equal(state.graph.sets[1].sort_order, 1);
+  } finally {
+    cssVariablesApi.reorderSets = original;
+  }
+});
+
+test('rapid ordering saves are serialized so the last order persists', async () => {
+  const graph = fixture();
+  graph.groups = ['a', 'b'].map((id, sort_order) => ({ id, name: id, set_id: 'set', sort_order, created_at: '', updated_at: '' }));
+  const original = cssVariablesApi.reorderGroups;
+  const requests: string[][] = [];
+  let finish!: (response: { data: { success: boolean } }) => void;
+  cssVariablesApi.reorderGroups = ids => {
+    requests.push(ids);
+    return requests.length === 1 ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ data: { success: true } });
+  };
+  try {
+    useCssVariablesStore.setState({ graph, error: null });
+    const first = useCssVariablesStore.getState().reorderGroups(['b', 'a']);
+    const second = useCssVariablesStore.getState().reorderGroups(['a', 'b']);
+    await Promise.resolve();
+    assert.deepEqual(requests, [['b', 'a']]);
+    finish({ data: { success: true } });
+    await Promise.all([first, second]);
+    assert.deepEqual(requests, [['b', 'a'], ['a', 'b']]);
+    assert.deepEqual(useCssVariablesStore.getState().graph.groups.map(g => [g.id, g.sort_order]), [['a', 0], ['b', 1]]);
+  } finally {
+    cssVariablesApi.reorderGroups = original;
+  }
 });

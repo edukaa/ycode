@@ -196,22 +196,7 @@ export const useCssVariablesStore = create<CssVariablesStore>((set, get) => ({
     }
   },
 
-  reorderSets: async (orderedIds) => {
-    const { graph } = get();
-    const reordered = orderedIds
-      .map((id, index) => {
-        const s = graph.sets.find((row) => row.id === id);
-        return s ? { ...s, sort_order: index } : null;
-      })
-      .filter(Boolean) as CssVariableSet[];
-    set((state) => ({ graph: { ...state.graph, sets: reordered }, ...bump(state) }));
-    try {
-      await cssVariablesApi.reorderSets(orderedIds);
-    } catch (error) {
-      console.error('Failed to persist set order:', error);
-      set({ graph });
-    }
-  },
+  reorderSets: (orderedIds) => persistGraphOrder('sets', orderedIds, cssVariablesApi.reorderSets),
 
   // ----- Modes --------------------------------------------------------------
 
@@ -361,20 +346,7 @@ export const useCssVariablesStore = create<CssVariablesStore>((set, get) => ({
     }
   },
 
-  reorderGroups: async (orderedIds) => {
-    const { graph } = get();
-    const reordered = graph.groups.map((g) => {
-      const index = orderedIds.indexOf(g.id);
-      return index === -1 ? g : { ...g, sort_order: index };
-    });
-    set((state) => ({ graph: { ...state.graph, groups: reordered }, ...bump(state) }));
-    try {
-      await cssVariablesApi.reorderGroups(orderedIds);
-    } catch (error) {
-      console.error('Failed to persist group order:', error);
-      set({ graph });
-    }
-  },
+  reorderGroups: (orderedIds) => persistGraphOrder('groups', orderedIds, cssVariablesApi.reorderGroups),
 
   // ----- Variables (items) --------------------------------------------------
 
@@ -439,20 +411,7 @@ export const useCssVariablesStore = create<CssVariablesStore>((set, get) => ({
     }
   },
 
-  reorderItems: async (orderedIds) => {
-    const { graph } = get();
-    const reordered = graph.variables.map((v) => {
-      const index = orderedIds.indexOf(v.id);
-      return index === -1 ? v : { ...v, sort_order: index };
-    });
-    set((state) => ({ graph: { ...state.graph, variables: reordered }, ...bump(state) }));
-    try {
-      await cssVariablesApi.reorderItems(orderedIds);
-    } catch (error) {
-      console.error('Failed to persist variable order:', error);
-      set({ graph });
-    }
-  },
+  reorderItems: (orderedIds) => persistGraphOrder('variables', orderedIds, cssVariablesApi.reorderItems),
 
   // ----- Values -------------------------------------------------------------
 
@@ -558,3 +517,38 @@ export const useCssVariablesStore = create<CssVariablesStore>((set, get) => ({
     return buildCssVariablesStylesheet({ ...graph, values });
   },
 }));
+
+type SortableGraphField = 'sets' | 'groups' | 'variables';
+const pendingOrders = new Map<SortableGraphField, Promise<void>>();
+
+/** Serialize saves and roll back ordering alone, preserving edits made in flight. */
+async function persistGraphOrder(
+  field: SortableGraphField,
+  orderedIds: string[],
+  persist: (ids: string[]) => Promise<{ error?: string; data?: { success: boolean } }>
+): Promise<void> {
+  const request = (pendingOrders.get(field) ?? Promise.resolve()).then(async () => {
+    const before = useCssVariablesStore.getState().graph[field];
+    const positions = new Map(orderedIds.map((id, index) => [id, index]));
+    const previousOrder = new Map(before.filter(row => positions.has(row.id)).map(row => [row.id, row.sort_order]));
+    useCssVariablesStore.setState(state => ({
+      graph: { ...state.graph, [field]: state.graph[field].map(row => positions.has(row.id) ? { ...row, sort_order: positions.get(row.id)! } : row) },
+      error: null,
+      ...bump(state),
+    }));
+    try {
+      const response = await persist(orderedIds);
+      if (response.error || !response.data?.success) throw new Error(response.error ?? 'Failed to save list order');
+    } catch (error) {
+      useCssVariablesStore.setState(state => ({
+        graph: { ...state.graph, [field]: state.graph[field].map(row => previousOrder.has(row.id) ? { ...row, sort_order: previousOrder.get(row.id)! } : row) },
+        error: error instanceof Error ? error.message : 'Failed to save list order',
+        ...bump(state),
+      }));
+    }
+  });
+  pendingOrders.set(field, request);
+  await request.finally(() => {
+    if (pendingOrders.get(field) === request) pendingOrders.delete(field);
+  });
+}

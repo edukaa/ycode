@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { DiamondPlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { InputGroupInput } from '@/components/ui/input-group';
 import { Button } from '@/components/ui/button';
@@ -27,10 +28,10 @@ export default function CssVariableInput({ grouped, variableTypes = ['size', 'pe
       {id ? (
         <Button
           variant="input" size="xs"
-          className="flex-1 min-w-0 justify-start truncate" title={variable?.name ?? 'Missing variable'}
+          className="flex-1 min-w-0 justify-start truncate [&>svg:first-child]:!size-2.5" title={variable?.name ?? 'Missing variable'}
           disabled={props.disabled} onClick={() => change('')}
         >
-          <Icon name="link" />
+          <DiamondPlus className="size-2.5" />
           <span className="truncate">{variable?.name ?? 'Missing variable'}</span>
           <Icon name="x" className="ml-auto shrink-0" />
         </Button>

@@ -11,7 +11,7 @@
 import React, { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import Icon from '@/components/ui/icon';
+import { DiamondPlus } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useCssVariablesStore } from '@/stores/useCssVariablesStore';
 import type { CssVariableType } from '@/types';
@@ -64,8 +64,9 @@ export default function CssVariableReferencePicker({
           size="icon-xs" variant="ghost"
           aria-label={triggerLabel ?? 'Use a variable'}
           title={triggerLabel ?? 'Use a variable'}
+          className="[&>svg]:!size-2.5"
         >
-          <Icon name="link" />
+          <DiamondPlus className="size-2.5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-2">

@@ -30,6 +30,7 @@ import { getCssVariableTableGridColumns } from './css-variable-table-layout';
 import CssVariableGroupDialog from './CssVariableGroupDialog';
 import CssVariableModeEditor from './CssVariableModeEditor';
 import CssVariableRow from './CssVariableRow';
+import CssVariableSortableList, { CssVariableDragHandle } from './CssVariableSortableList';
 
 interface CssVariableSetEditorProps {
   set: CssVariableSet;
@@ -55,6 +56,8 @@ export default function CssVariableSetEditor({ set }: CssVariableSetEditorProps)
   const createGroup = useCssVariablesStore((s) => s.createGroup);
   const updateGroup = useCssVariablesStore((s) => s.updateGroup);
   const deleteGroup = useCssVariablesStore((s) => s.deleteGroup);
+  const reorderGroups = useCssVariablesStore((s) => s.reorderGroups);
+  const reorderItems = useCssVariablesStore((s) => s.reorderItems);
 
   const [editingModeId, setEditingModeId] = useState<string | null>(null);
   const [groupDialog, setGroupDialog] = useState<GroupDialogState>(null);
@@ -125,28 +128,22 @@ export default function CssVariableSetEditor({ set }: CssVariableSetEditorProps)
           onAddMode={handleAddMode}
         />
 
-        {groups.map((group) => (
-          <GroupSection
-            key={group.id}
-            group={group}
-            variables={variablesByGroup.get(group.id) ?? []}
-            modes={modes}
-            canDelete={groups.length > 1}
-            onAdd={(type) => handleAddVariable(type, group.id)}
-            onRename={() => setGroupDialog({ mode: 'rename', group })}
-            onDelete={() => setDeletingGroup(group)}
-          />
-        ))}
-
-        <div className="px-3 py-2 border-b">
-          <Button
-            size="xs" variant="ghost"
-            onClick={() => setGroupDialog({ mode: 'create' })}
-          >
-            <Icon name="plus" />
-            Group
-          </Button>
-        </div>
+        <CssVariableSortableList items={groups} onReorder={reorderGroups}>
+          {(group) => (
+            <GroupSection
+              key={group.id}
+              group={group}
+              variables={variablesByGroup.get(group.id) ?? []}
+              modes={modes}
+              canDelete={groups.length > 1}
+              onAdd={(type) => handleAddVariable(type, group.id)}
+              onRename={() => setGroupDialog({ mode: 'rename', group })}
+              onDelete={() => setDeletingGroup(group)}
+              onAddGroup={() => setGroupDialog({ mode: 'create' })}
+              onReorder={reorderItems}
+            />
+          )}
+        </CssVariableSortableList>
       </div>
 
       {editingModeId &&
@@ -253,6 +250,8 @@ function GroupSection({
   onAdd,
   onRename,
   onDelete,
+  onAddGroup,
+  onReorder,
 }: {
   group: CssVariableGroup;
   variables: CssVariable[];
@@ -261,13 +260,22 @@ function GroupSection({
   onAdd: (type: CssVariableType) => void;
   onRename: () => void;
   onDelete: () => void;
+  onAddGroup: () => void;
+  onReorder: (orderedIds: string[]) => Promise<void>;
 }) {
   return (
     <div>
       <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium bg-muted/20 border-b">
+        <CssVariableDragHandle label={`group ${group.name}`} />
         <span className="truncate">{group.name}</span>
         <div className="flex-1" />
-        <AddVariableMenu onAdd={onAdd} />
+        <Button
+          size="xs" variant="ghost"
+          onClick={onAddGroup}
+        >
+          <Icon name="plus" />
+          Group
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -294,13 +302,18 @@ function GroupSection({
       {variables.length === 0 ? (
         <div className="px-3 h-13 flex items-center text-xs text-muted-foreground border-b">No variables in this group yet.</div>
       ) : (
-        variables.map((variable) => (
-          <CssVariableRow
-            key={variable.id} variable={variable}
-            modes={modes}
-          />
-        ))
+        <CssVariableSortableList items={variables} onReorder={onReorder}>
+          {(variable) => (
+            <CssVariableRow
+              key={variable.id} variable={variable}
+              modes={modes}
+            />
+          )}
+        </CssVariableSortableList>
       )}
+      <div className="px-3 py-2 border-b">
+        <AddVariableMenu onAdd={onAdd} />
+      </div>
     </div>
   );
 }

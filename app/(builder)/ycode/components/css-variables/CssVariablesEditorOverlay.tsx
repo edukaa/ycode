@@ -26,6 +26,7 @@ import { useEditorStore } from '@/stores/useEditorStore';
 import { useCssVariablesStore } from '@/stores/useCssVariablesStore';
 import CssVariableSetEditor from './CssVariableSetEditor';
 import CssVariableSetSettingsDialog from './CssVariableSetSettingsDialog';
+import CssVariableSortableList, { CssVariableDragHandle } from './CssVariableSortableList';
 import type { CssVariableSet } from '@/types';
 
 export default function CssVariablesEditorOverlay() {
@@ -38,6 +39,7 @@ export default function CssVariablesEditorOverlay() {
   const loadGraph = useCssVariablesStore((s) => s.loadGraph);
   const createSet = useCssVariablesStore((s) => s.createSet);
   const deleteSet = useCssVariablesStore((s) => s.deleteSet);
+  const reorderSets = useCssVariablesStore((s) => s.reorderSets);
 
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
@@ -133,19 +135,21 @@ export default function CssVariablesEditorOverlay() {
               </Empty>
             ) : (
               <div className="flex flex-col">
-                {sortedSets.map((set) => (
-                  <SetSidebarItem
-                    key={set.id}
-                    set={set}
-                    isActive={selectedSetId === set.id}
-                    onSelect={() => setSelectedSetId(set.id)}
-                    onEdit={() => {
-                      setSelectedSetId(set.id);
-                      setEditingSetId(set.id);
-                    }}
-                    onDelete={() => setDeletingSetId(set.id)}
-                  />
-                ))}
+                <CssVariableSortableList items={sortedSets} onReorder={reorderSets}>
+                  {(set) => (
+                    <SetSidebarItem
+                      key={set.id}
+                      set={set}
+                      isActive={selectedSetId === set.id}
+                      onSelect={() => setSelectedSetId(set.id)}
+                      onEdit={() => {
+                        setSelectedSetId(set.id);
+                        setEditingSetId(set.id);
+                      }}
+                      onDelete={() => setDeletingSetId(set.id)}
+                    />
+                  )}
+                </CssVariableSortableList>
               </div>
             )}
           </div>
@@ -230,6 +234,7 @@ function SetSidebarItem({
       )}
     >
       <div className="flex gap-2 items-center min-w-0">
+        <CssVariableDragHandle label={`collection ${set.name}`} />
         <Icon name="swatch" className="size-3 shrink-0" />
         <span className="truncate">{set.name}</span>
       </div>

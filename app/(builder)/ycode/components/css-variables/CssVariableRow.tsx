@@ -16,6 +16,7 @@ import { useCssVariablesStore } from '@/stores/useCssVariablesStore';
 import type { CssVariable, CssVariableSetMode, CssVariableType } from '@/types';
 import { getCssVariableTableGridColumns } from './css-variable-table-layout';
 import CssVariableValueCell from './CssVariableValueCell';
+import { CssVariableDragHandle } from './CssVariableSortableList';
 
 interface CssVariableRowProps {
   variable: CssVariable;
@@ -72,6 +73,7 @@ export default function CssVariableRow({ variable, modes }: CssVariableRowProps)
       style={{ gridTemplateColumns: getCssVariableTableGridColumns(modes.length) }}
     >
       <div className="flex items-center gap-2 min-w-0">
+        <CssVariableDragHandle label={`variable ${variable.name}`} />
         <Icon
           name={TYPE_ICONS[variable.type]}
           className="size-3.5 text-muted-foreground shrink-0"
