@@ -13,7 +13,9 @@ export async function verifyCssVariableMigration(db: Knex): Promise<void> {
   await up(db);
   assert.equal((await db('css_variables').where({ id }).first()).name, 'Brand');
   assert.equal((await db('css_variable_values').where({ css_variable_id: id }).first()).value, '#ff0000/50');
-  assert.equal((await db('color_variables')).length, 0);
+  assert.equal((await db('color_variables')).length, 1);
+  assert.equal((await db('color_variables').where({ id }).first()).value, '#ff0000/50', 'older deployments retain their original colors');
+  assert.equal((await db('color_variables').where({ id }).first()).css_variable_migrated, true);
   const mode = await db('css_variable_set_modes').first();
   await db('css_variable_values').where({ css_variable_id: id }).update({ value: '#00ff00' });
   await up(db);

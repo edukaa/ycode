@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCssVariablesStylesheet } from '@/lib/css-variables-stylesheet';
-import { getDefaultColorVariables, validateCssVariableValues, isValidCssVariableValue } from '@/lib/css-variable-utils';
+import { getDefaultColorVariables, legacyColorsToGraph, validateCssVariableValues, isValidCssVariableValue } from '@/lib/css-variable-utils';
 import { cssVariableSetSchema, cssVariableModeSchema } from '@/lib/css-variable-schemas';
 import { parseTextShadow, serializeTextShadow } from '@/lib/text-shadow-utils';
 import { classesToDesign, designToClasses, getAffectedProperties, replaceConflictingClasses } from '@/lib/tailwind-class-mapper';
@@ -103,4 +103,13 @@ test('shadow tokens survive parsing and serialization alongside numeric pixels',
   const numeric = parseTextShadow('0px_2px_4px_#000000');
   assert.ok(numeric);
   assert.equal(serializeTextShadow(numeric), '0px_2px_4px_#000000');
+});
+
+test('render legacy colors before the typed schema migration runs', () => {
+  const colors = [{ id: 'brand', name: 'Brand', value: '#ff0000/50', sort_order: 2, created_at: '', updated_at: '' }];
+  const graph = legacyColorsToGraph(colors);
+  validateCssVariableValues(graph);
+  assert.equal(graph.variables[0].id, 'brand');
+  assert.ok(buildCssVariablesStylesheet(graph).includes('--brand: rgba(255,0,0,0.5);'));
+  assert.deepEqual(getDefaultColorVariables(graph), colors);
 });

@@ -68,3 +68,18 @@ export function getDefaultColorVariables(graph: CssVariablesGraph): ColorVariabl
     id: v.id, name: v.name, value: resolve(v.id), sort_order: v.sort_order, created_at: v.created_at, updated_at: v.updated_at,
   }));
 }
+
+/** Read-only graph for rendering a deployment before its first migration runs. */
+export function legacyColorsToGraph(colors: ColorVariable[]): CssVariablesGraph {
+  const setId = '00000000-0000-4000-8000-000000000001';
+  const modeId = '00000000-0000-4000-8000-000000000002';
+  const groupId = '00000000-0000-4000-8000-000000000003';
+  const meta = { sort_order: 0, created_at: '', updated_at: '' };
+  return {
+    sets: [{ ...meta, id: setId, name: 'Colors', activation_kind: 'default' }],
+    modes: [{ ...meta, id: modeId, set_id: setId, name: 'Default', is_default: true, data_theme: null, min_width: null }],
+    groups: [{ ...meta, id: groupId, set_id: setId, name: 'Default group' }],
+    variables: colors.map(color => ({ ...color, set_id: setId, group_id: groupId, type: 'color' })),
+    values: colors.map(color => ({ css_variable_id: color.id, mode_id: modeId, value: color.value, created_at: color.created_at, updated_at: color.updated_at })),
+  };
+}

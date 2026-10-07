@@ -7,11 +7,12 @@
  * The graph is shipped to the client and SSR via {@link getCssVariablesGraph}.
  */
 
-import { validateCssVariableValues, CSS_VARIABLE_REFERENCE } from '@/lib/css-variable-utils';
+import { validateCssVariableValues, CSS_VARIABLE_REFERENCE, legacyColorsToGraph } from '@/lib/css-variable-utils';
 import { CssVariableValidationError, cssVariableIdSchema, cssVariableSetSchema, cssVariableModeSchema, cssVariableGroupSchema, cssVariableSchema, cssVariableValueSchema, cssVariableOrderSchema } from '@/lib/css-variable-schemas';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { generateContentHash } from '@/lib/hash-utils';
 import type {
+  ColorVariable,
   CssVariable,
   CssVariableGroup,
   CssVariableSet,
@@ -97,6 +98,15 @@ export async function getCssVariablesGraph(tenantId?: string): Promise<CssVariab
     client.from('css_variables').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
     client.from('css_variable_values').select('*'),
   ]);
+
+  // Vercel prerenders public/error pages before the builder can run migrations.
+  // Fall back only when the whole typed schema is absent; other errors remain visible.
+  const results = [setsRes, modesRes, groupsRes, varsRes, valuesRes];
+  if (results.every(result => result.error && ['PGRST205', '42P01'].includes(result.error.code))) {
+    const legacy = await client.from('color_variables').select('*').order('sort_order', { ascending: true });
+    if (legacy.error) throw new Error(`Failed to fetch legacy color variables: ${legacy.error.message}`);
+    return legacyColorsToGraph((legacy.data ?? []) as ColorVariable[]);
+  }
 
   if (setsRes.error) throw new Error(`Failed to fetch CSS variable sets: ${setsRes.error.message}`);
   if (modesRes.error) throw new Error(`Failed to fetch CSS variable modes: ${modesRes.error.message}`);

@@ -252,11 +252,16 @@ export async function up(knex: Knex): Promise<void> {
     FOR EACH ROW EXECUTE FUNCTION provision_css_variable_collection();
   `);
 
-  // Migrate only missing legacy IDs. Clear migrated rows so template reruns
-  // cannot resurrect deleted colors or overwrite values edited in the new UI.
+  // Keep legacy rows available to older deployments sharing this database.
+  // A marker prevents replay from resurrecting deleted tokens or overwriting edits.
   if (await knex.schema.hasTable('color_variables')) {
+    if (!(await knex.schema.hasColumn('color_variables', 'css_variable_migrated'))) {
+      await knex.schema.alterTable('color_variables', table => {
+        table.boolean('css_variable_migrated').notNullable().defaultTo(false);
+      });
+    }
     const rows = await knex('color_variables').select('id', 'name', 'value', 'sort_order', 'created_at', 'updated_at')
-      .whereNotIn('id', knex('css_variables').select('id')).orderBy('sort_order', 'asc');
+      .where('css_variable_migrated', false).whereNotIn('id', knex('css_variables').select('id')).orderBy('sort_order', 'asc');
     if (rows.length) {
       let collection = await knex('css_variable_sets').where({ name: 'Colors', activation_kind: 'default' }).first();
       if (!collection) [collection] = await knex('css_variable_sets').insert({ name: 'Colors', activation_kind: 'default' }).returning('*');
@@ -268,7 +273,7 @@ export async function up(knex: Knex): Promise<void> {
       })));
       await knex('css_variable_values').insert(rows.map(row => ({ css_variable_id: row.id, mode_id: mode.id, value: row.value })));
     }
-    await knex('color_variables').whereIn('id', knex('css_variables').select('id')).delete();
+    await knex('color_variables').whereIn('id', knex('css_variables').select('id')).update({ css_variable_migrated: true });
   }
 
   // Backfill: every set must have at least one group, and no variable may be
@@ -366,6 +371,9 @@ export async function down(knex: Knex): Promise<void> {
       JOIN css_variable_values val ON val.css_variable_id = v.id AND val.mode_id = m.id
       WHERE v.type = 'color'
       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, value = EXCLUDED.value, sort_order = EXCLUDED.sort_order`);
+  }
+  if (await knex.schema.hasColumn('color_variables', 'css_variable_migrated')) {
+    await knex.schema.alterTable('color_variables', table => table.dropColumn('css_variable_migrated'));
   }
   await knex.schema.dropTableIfExists('css_variable_values');
   await knex.schema.dropTableIfExists('css_variables');
